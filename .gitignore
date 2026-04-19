@@ -1,0 +1,9 @@
+data/
+frentend/admin/node_modules/
+frentend/app_v2/unpackage/
+backend/vendor/
+backend/.env
+backend/config/wechat.php
+backend/runtime/
+backend/public/storage/
+frentend/admin/dist/

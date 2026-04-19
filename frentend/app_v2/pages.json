@@ -1,0 +1,243 @@
+{
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "OA任务助手",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f5f6f8"
+  },
+  "pages": [
+    {
+      "path": "pages/auth/login",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/auth/register",
+      "style": {
+        "navigationBarTitleText": "注册账号"
+      }
+    },
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationBarTitleText": "首页",
+        "navigationBarTextStyle": "white",
+        "navigationBarBackgroundColor": "#1677ff"
+      }
+    },
+    {
+      "path": "pages/tasks/index",
+      "style": {
+        "navigationBarTitleText": "任务中心"
+      }
+    },
+    {
+      "path": "pages/tasks/list",
+      "style": {
+        "navigationBarTitleText": "任务列表"
+      }
+    },
+    {
+      "path": "pages/messages/index",
+      "style": {
+        "navigationBarTitleText": "消息"
+      }
+    },
+    {
+      "path": "pages/messages/group",
+      "style": {
+        "navigationBarTitleText": "群聊"
+      }
+    },
+    {
+      "path": "pages/messages/contact-select",
+      "style": {
+        "navigationBarTitleText": "选择联系人"
+      }
+    },
+    {
+      "path": "pages/messages/chat",
+      "style": {
+        "navigationBarTitleText": "聊天"
+      }
+    },
+    {
+      "path": "pages/mine/index",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/order/list",
+      "style": {
+        "navigationBarTitleText": "订单任务"
+      }
+    },
+    {
+      "path": "pages/order/detail",
+      "style": {
+        "navigationBarTitleText": "订单详情"
+      }
+    },
+    {
+      "path": "pages/order/create",
+      "style": {
+        "navigationBarTitleText": "新建订单"
+      }
+    },
+    {
+      "path": "pages/notice/list",
+      "style": {
+        "navigationBarTitleText": "公告通知"
+      }
+    },
+    {
+      "path": "pages/attendance/index",
+      "style": {
+        "navigationBarTitleText": "考勤打卡"
+      }
+    },
+    {
+      "path": "pages/attendance/stats",
+      "style": {
+        "navigationBarTitleText": "出勤统计"
+      }
+    },
+    {
+      "path": "pages/temp-task/create",
+      "style": {
+        "navigationBarTitleText": "临时任务"
+      }
+    },
+    {
+      "path": "pages/intent-order/list",
+      "style": {
+        "navigationBarTitleText": "意向订单"
+      }
+    },
+    {
+      "path": "pages/intent-order/detail",
+      "style": {
+        "navigationBarTitleText": "意向订单详情"
+      }
+    },
+    {
+      "path": "pages/workbench/factory",
+      "style": {
+        "navigationBarTitleText": "工厂看板"
+      }
+    },
+    {
+      "path": "pages/tasks/detail",
+      "style": {
+        "navigationBarTitleText": "任务详情"
+      }
+    },
+    {
+      "path": "pages/tasks/create",
+      "style": {
+        "navigationBarTitleText": "新建任务"
+      }
+    },
+    {
+      "path": "pages/tasks/machine",
+      "style": {
+        "navigationBarTitleText": "机器管理任务"
+      }
+    },
+    {
+      "path": "pages/tasks/customer-inspection",
+      "style": {
+        "navigationBarTitleText": "客户验厂"
+      }
+    },
+    {
+      "path": "pages/ui/preview",
+      "style": {
+        "navigationBarTitleText": "UI设计稿"
+      }
+    },
+    {
+      "path": "pages/mine/profile",
+      "style": {
+        "navigationBarTitleText": "个人信息"
+      }
+    },
+    {
+      "path": "pages/order/fees",
+      "style": {
+        "navigationBarTitleText": "订单费用"
+      }
+    },
+    {
+      "path": "pages/order/nameplate",
+      "style": {
+        "navigationBarTitleText": "订单铭牌"
+      }
+    },
+    {
+      "path": "pages/order/files/index",
+      "style": {
+        "navigationBarTitleText": "订单收尾文件"
+      }
+    },
+    {
+      "path": "pages/order/files/upload",
+      "style": {
+        "navigationBarTitleText": "文件上传"
+      }
+    },
+    {
+      "path": "pages/order/files/audit",
+      "style": {
+        "navigationBarTitleText": "文件审核"
+      }
+    },
+    {
+      "path": "pages/finance/reimburse",
+      "style": {
+        "navigationBarTitleText": "费用报销"
+      }
+    },
+    {
+      "path": "pages/leave/index",
+      "style": {
+        "navigationBarTitleText": "请假申请"
+      }
+    }
+  ],
+  "tabBar": {
+    "selectedColor": "#1677ff",
+    "color": "#666666",
+    "borderStyle": "black",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "static/tabbar/home.png",
+        "selectedIconPath": "static/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/tasks/index",
+        "text": "任务",
+        "iconPath": "static/tabbar/task.png",
+        "selectedIconPath": "static/tabbar/task-active.png"
+      },
+      {
+        "pagePath": "pages/messages/index",
+        "text": "消息",
+        "iconPath": "static/tabbar/message.png",
+        "selectedIconPath": "static/tabbar/message-active.png"
+      },
+      {
+        "pagePath": "pages/mine/index",
+        "text": "我的",
+        "iconPath": "static/tabbar/mine.png",
+        "selectedIconPath": "static/tabbar/mine-active.png"
+      }
+    ]
+  }
+}
