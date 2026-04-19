@@ -8,11 +8,11 @@
       </view>
       <view class="form-item">
         <text>手机号</text>
-        <input v-model="form.mobile" placeholder="请输入手机号" type="number" maxlength="11" />
+        <input v-model="form.mobile" placeholder="请输入11位中国大陆手机号" type="number" maxlength="11" />
       </view>
       <view class="form-item">
         <text>登录密码</text>
-        <input v-model="form.password" placeholder="请输入不少于6位的密码" type="password" />
+        <input v-model="form.password" placeholder="请输入至少8位（数字和英文字符）" type="password" />
       </view>
       <view class="form-item">
         <text>确认密码</text>
@@ -175,6 +175,16 @@ const bindWechat = () => {
   })
 }
 
+const validateMobile = (mobile) => {
+  const mobileReg = /^1[3-9]\d{9}$/
+  return mobileReg.test(mobile)
+}
+
+const validatePassword = (password) => {
+  const passwordReg = /^[a-zA-Z0-9]{8,}$/
+  return passwordReg.test(password)
+}
+
 const validateForm = () => {
   const requiredFields = [
     { key: 'name', label: '真实姓名' },
@@ -194,6 +204,17 @@ const validateForm = () => {
       return false
     }
   }
+  
+  if (!validateMobile(form.mobile)) {
+    uni.showToast({ title: '请输入正确的中国大陆手机号', icon: 'none' })
+    return false
+  }
+  
+  if (!validatePassword(form.password)) {
+    uni.showToast({ title: '密码至少8位，仅包含数字和英文字符', icon: 'none' })
+    return false
+  }
+  
   if (form.password !== form.confirm_password) {
     uni.showToast({ title: '两次密码不一致', icon: 'none' })
     return false
