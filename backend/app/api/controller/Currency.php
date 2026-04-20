@@ -7,7 +7,7 @@ use think\facade\Db;
 
 class Currency extends ApiController
 {
-    protected $publicActions = ['index'];
+    protected array $publicActions = ['index'];
 
     public function index()
     {
