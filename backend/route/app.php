@@ -77,6 +77,9 @@ Route::group('api', function () {
     Route::post('leave', '\app\api\controller\Leave@save');
     Route::post('leave/:id/approve', '\app\api\controller\Leave@approve');
 
+    Route::get('voltages', '\app\api\controller\Voltage@index');
+    Route::get('currencies', '\app\api\controller\Currency@index');
+
     Route::post('upload', '\app\api\controller\Upload@save');
 
     Route::group('admin', function () {
@@ -101,5 +104,15 @@ Route::group('api', function () {
         Route::get('users', '\app\admin\controller\User@index');
         Route::post('users/:id/approve', '\app\admin\controller\User@approve');
         Route::post('users/:id/reject', '\app\admin\controller\User@reject');
+
+        Route::get('voltages', '\app\admin\controller\Voltage@index');
+        Route::post('voltages', '\app\admin\controller\Voltage@save');
+        Route::put('voltages/:id', '\app\admin\controller\Voltage@update');
+        Route::delete('voltages/:id', '\app\admin\controller\Voltage@delete');
+
+        Route::get('currencies', '\app\admin\controller\Currency@index');
+        Route::post('currencies', '\app\admin\controller\Currency@save');
+        Route::put('currencies/:id', '\app\admin\controller\Currency@update');
+        Route::delete('currencies/:id', '\app\admin\controller\Currency@delete');
     });
 });
