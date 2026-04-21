@@ -19,10 +19,10 @@
         <input v-model="form.mobile" placeholder="请输入11位中国大陆手机号" maxlength="11" type="number" />
         <input v-model="form.password" placeholder="请输入密码（数字和英文字符）" maxlength="20" type="password" />
         <button class="primary" :loading="loading" :disabled="isSubmitDisabled" @click="loginByPassword">
-          {{ isLocked ? `账号已锁定，请${formattedRemainingTime}后再试` : '账号密码登录' }}
+          {{ isCurrentMobileLocked ? `账号已锁定，请${formattedRemainingTime}后再试` : '账号密码登录' }}
         </button>
         <view class="info">新注册账号需后台审核通过后方可登录</view>
-        <view v-if="isLocked" class="lock-info">
+        <view v-if="isCurrentMobileLocked" class="lock-info">
           账号因连续密码错误已临时锁定，请稍后再试
         </view>
       </view>
@@ -40,7 +40,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onUnmounted } from 'vue'
+import { reactive, ref, computed, watch, onUnmounted } from 'vue'
 import store from '../../store'
 import { api } from '../../utils/request'
 import { startMessagePolling } from '../../utils/message-center'
@@ -52,9 +52,13 @@ const tabs = [
 const activeTab = ref('account')
 const form = reactive({ mobile: '', password: '' })
 const loading = ref(false)
-const isLocked = ref(false)
+const lockedMobile = ref('')
 const remainingSeconds = ref(0)
 let countdownTimer = null
+
+const isCurrentMobileLocked = computed(() => {
+  return lockedMobile.value !== '' && lockedMobile.value === form.mobile && remainingSeconds.value > 0
+})
 
 const formattedRemainingTime = computed(() => {
   const minutes = Math.floor(remainingSeconds.value / 60)
@@ -63,11 +67,11 @@ const formattedRemainingTime = computed(() => {
 })
 
 const isSubmitDisabled = computed(() => {
-  return loading.value || isLocked.value
+  return loading.value || isCurrentMobileLocked.value
 })
 
-const startCountdown = (seconds) => {
-  isLocked.value = true
+const startCountdown = (seconds, mobile) => {
+  lockedMobile.value = mobile
   remainingSeconds.value = seconds
   
   if (countdownTimer) {
@@ -79,7 +83,8 @@ const startCountdown = (seconds) => {
     if (remainingSeconds.value <= 0) {
       clearInterval(countdownTimer)
       countdownTimer = null
-      isLocked.value = false
+      lockedMobile.value = ''
+      remainingSeconds.value = 0
     }
   }, 1000)
 }
@@ -89,9 +94,20 @@ const stopCountdown = () => {
     clearInterval(countdownTimer)
     countdownTimer = null
   }
-  isLocked.value = false
+  lockedMobile.value = ''
   remainingSeconds.value = 0
 }
+
+watch(() => form.mobile, (newMobile) => {
+  if (newMobile !== lockedMobile.value) {
+    if (countdownTimer && lockedMobile.value !== '') {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+    }
+    lockedMobile.value = ''
+    remainingSeconds.value = 0
+  }
+})
 
 onUnmounted(() => {
   stopCountdown()
@@ -151,7 +167,7 @@ const loginByPassword = async () => {
     console.error(error)
     const errorData = error.data || {}
     if (errorData.locked && errorData.remaining_seconds) {
-      startCountdown(errorData.remaining_seconds)
+      startCountdown(errorData.remaining_seconds, form.mobile)
     }
   } finally {
     loading.value = false
