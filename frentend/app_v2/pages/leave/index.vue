@@ -19,9 +19,7 @@
         <picker mode="time" :value="form.start_time" @change="(e) => onDateChange('start_time', e.detail.value)">
           <view class="picker">{{ form.start_time || '请选择时间' }}</view>
         </picker>
-      </view>
-      <view class="form-item">
-        <text>结束日期</text>
+      </view> <view class="form-item"> <text>结束日期</text>
         <picker mode="date" :value="form.end_date" @change="(e) => onDateChange('end_date', e.detail.value)">
           <view class="picker">{{ form.end_date || '请选择日期' }}</view>
         </picker>
@@ -51,18 +49,25 @@
         </view>
         <view class="filter-item">
           <text class="filter-label">开始日期</text>
-          <picker mode="date" :value="filterStartDate" @change="onFilterStartDateChange">
-            <view class="picker">{{ filterStartDate || '不限' }}</view>
-          </picker>
+          <view class="date-filter-row">
+            <picker mode="date" :value="filterStartDate" @change="onFilterStartDateChange">
+              <view class="picker">{{ filterStartDate || '不限' }}</view>
+            </picker>
+            <view v-if="filterStartDate" class="clear-btn" @click="clearFilterStartDate">×</view>
+          </view>
         </view>
         <view class="filter-item">
           <text class="filter-label">结束日期</text>
-          <picker mode="date" :value="filterEndDate" @change="onFilterEndDateChange">
-            <view class="picker">{{ filterEndDate || '不限' }}</view>
-          </picker>
+          <view class="date-filter-row">
+            <picker mode="date" :value="filterEndDate" @change="onFilterEndDateChange">
+              <view class="picker">{{ filterEndDate || '不限' }}</view>
+            </picker>
+            <view v-if="filterEndDate" class="clear-btn" @click="clearFilterEndDate">×</view>
+          </view>
         </view>
       </view>
-      <view v-if="!requests.length && !loading" class="empty">暂无记录</view>
+      <view v-if="dateRangeError" class="error-tip">{{ dateRangeError }}</view>
+      <view v-if="!requests.length && !loading && !dateRangeError" class="empty">暂无记录</view>
       <view class="record" v-for="item in requests" :key="item.id">
         <view class="record-row">
           <text>{{ formatType(item.leave_type) }}</text>
@@ -104,6 +109,7 @@ const currentType = ref(leaveTypes[0])
 const currentStatus = ref(statusOptions[0])
 const filterStartDate = ref('')
 const filterEndDate = ref('')
+const dateRangeError = ref('')
 
 const form = reactive({
   leave_type: currentType.value.value,
@@ -137,16 +143,46 @@ const onDateChange = (key, value) => {
 
 const onStatusChange = (e) => {
   currentStatus.value = statusOptions[e.detail.value]
+  dateRangeError.value = ''
   resetAndFetch()
+}
+
+const validateDateRange = () => {
+  if (filterStartDate.value && filterEndDate.value) {
+    const start = new Date(filterStartDate.value.replace(/-/g, '/')).getTime()
+    const end = new Date(filterEndDate.value.replace(/-/g, '/')).getTime()
+    if (start > end) {
+      dateRangeError.value = '开始日期不能大于结束日期'
+      return false
+    }
+  }
+  dateRangeError.value = ''
+  return true
 }
 
 const onFilterStartDateChange = (e) => {
   filterStartDate.value = e.detail.value
-  resetAndFetch()
+  if (validateDateRange()) {
+    resetAndFetch()
+  }
 }
 
 const onFilterEndDateChange = (e) => {
   filterEndDate.value = e.detail.value
+  if (validateDateRange()) {
+    resetAndFetch()
+  }
+}
+
+const clearFilterStartDate = () => {
+  filterStartDate.value = ''
+  dateRangeError.value = ''
+  resetAndFetch()
+}
+
+const clearFilterEndDate = () => {
+  filterEndDate.value = ''
+  dateRangeError.value = ''
   resetAndFetch()
 }
 
@@ -247,11 +283,13 @@ const resetAndFetch = () => {
   page.value = 1
   hasMore.value = true
   requests.value = []
-  fetchRequests()
+  if (!dateRangeError.value) {
+    fetchRequests()
+  }
 }
 
 const onScrollToLower = () => {
-  if (!loading.value && hasMore.value) {
+  if (!loading.value && hasMore.value && !dateRangeError.value) {
     page.value++
     fetchRequests()
   }
@@ -275,6 +313,10 @@ const formatRange = (start, end) => {
 }
 
 onShow(() => {
+  filterStartDate.value = ''
+  filterEndDate.value = ''
+  currentStatus.value = statusOptions[0]
+  dateRangeError.value = ''
   resetAndFetch()
 })
 </script>
@@ -339,6 +381,34 @@ textarea {
   margin-bottom: 8rpx;
   font-size: 24rpx;
   color: #666;
+}
+.date-filter-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.date-filter-row .picker {
+  flex: 1;
+  padding-right: 60rpx;
+}
+.clear-btn {
+  position: absolute;
+  right: 16rpx;
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  color: #999;
+  line-height: 1;
+}
+.error-tip {
+  color: #ff4d4f;
+  font-size: 24rpx;
+  text-align: center;
+  padding: 16rpx 0;
+  margin-bottom: 16rpx;
 }
 .record {
   padding: 16rpx 0;
