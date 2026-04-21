@@ -119,8 +119,8 @@ export const api = {
   createReimburse(payload) {
     return request({ url: '/reimburse', method: 'POST', data: payload })
   },
-  leaveList() {
-    return request({ url: '/leave' })
+  leaveList(params = {}) {
+    return request({ url: '/leave', data: params })
   },
   createLeave(payload) {
     return request({ url: '/leave', method: 'POST', data: payload })
