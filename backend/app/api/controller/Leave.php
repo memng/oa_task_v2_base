@@ -80,9 +80,6 @@ class Leave extends ApiController
     private function buildConflictMessage($conflictingRecords)
     {
         $count = count($conflictingRecords);
-        $ranges = array_map(function ($record) {
-            return $this->formatConflictRange($record['start_at'], $record['end_at']);
-        }, $conflictingRecords);
         
         $typeMap = [
             'annual' => '年假',
