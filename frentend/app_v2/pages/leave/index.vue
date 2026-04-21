@@ -19,7 +19,9 @@
         <picker mode="time" :value="form.start_time" @change="(e) => onDateChange('start_time', e.detail.value)">
           <view class="picker">{{ form.start_time || '请选择时间' }}</view>
         </picker>
-      </view> <view class="form-item"> <text>结束日期</text>
+      </view>
+      <view class="form-item">
+        <text>结束日期</text>
         <picker mode="date" :value="form.end_date" @change="(e) => onDateChange('end_date', e.detail.value)">
           <view class="picker">{{ form.end_date || '请选择日期' }}</view>
         </picker>
