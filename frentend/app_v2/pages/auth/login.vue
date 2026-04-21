@@ -18,10 +18,13 @@
       <view class="form">
         <input v-model="form.mobile" placeholder="请输入11位中国大陆手机号" maxlength="11" type="number" />
         <input v-model="form.password" placeholder="请输入密码（数字和英文字符）" maxlength="20" type="password" />
-        <button class="primary" :loading="loading" :disabled="loading" @click="loginByPassword">
-          账号密码登录
+        <button class="primary" :loading="loading" :disabled="isSubmitDisabled" @click="loginByPassword">
+          {{ isLocked ? `账号已锁定，请${formattedRemainingTime}后再试` : '账号密码登录' }}
         </button>
         <view class="info">新注册账号需后台审核通过后方可登录</view>
+        <view v-if="isLocked" class="lock-info">
+          账号因连续密码错误已临时锁定，请稍后再试
+        </view>
       </view>
     </view>
 
@@ -37,7 +40,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed, onUnmounted } from 'vue'
 import store from '../../store'
 import { api } from '../../utils/request'
 import { startMessagePolling } from '../../utils/message-center'
@@ -49,6 +52,50 @@ const tabs = [
 const activeTab = ref('account')
 const form = reactive({ mobile: '', password: '' })
 const loading = ref(false)
+const isLocked = ref(false)
+const remainingSeconds = ref(0)
+let countdownTimer = null
+
+const formattedRemainingTime = computed(() => {
+  const minutes = Math.floor(remainingSeconds.value / 60)
+  const seconds = remainingSeconds.value % 60
+  return `${minutes}分${seconds.toString().padStart(2, '0')}秒`
+})
+
+const isSubmitDisabled = computed(() => {
+  return loading.value || isLocked.value
+})
+
+const startCountdown = (seconds) => {
+  isLocked.value = true
+  remainingSeconds.value = seconds
+  
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+  }
+  
+  countdownTimer = setInterval(() => {
+    remainingSeconds.value--
+    if (remainingSeconds.value <= 0) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+      isLocked.value = false
+    }
+  }, 1000)
+}
+
+const stopCountdown = () => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+  isLocked.value = false
+  remainingSeconds.value = 0
+}
+
+onUnmounted(() => {
+  stopCountdown()
+})
 
 const validateMobile = (mobile) => {
   const mobileReg = /^1[3-9]\d{9}$/
@@ -98,9 +145,14 @@ const loginByPassword = async () => {
       mobile: form.mobile,
       password: form.password
     })
+    stopCountdown()
     handleLoginSuccess(res)
   } catch (error) {
     console.error(error)
+    const errorData = error.data || {}
+    if (errorData.locked && errorData.remaining_seconds) {
+      startCountdown(errorData.remaining_seconds)
+    }
   } finally {
     loading.value = false
   }
@@ -234,6 +286,19 @@ const sendWeChatLogin = async (code, userInfo) => {
   color: #999;
   text-align: center;
   margin-top: 8rpx;
+}
+.lock-info {
+  font-size: 24rpx;
+  color: #ff4d4f;
+  text-align: center;
+  margin-top: 16rpx;
+  padding: 16rpx;
+  background: #fff1f0;
+  border-radius: 8rpx;
+}
+button[disabled].primary {
+  background: #bfbfbf !important;
+  color: #fff !important;
 }
 .register-link {
   margin-top: 40rpx;

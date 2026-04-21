@@ -10,6 +10,9 @@ class Auth extends ApiController
 {
     protected array $publicActions = ['login', 'register'];
 
+    protected const MAX_LOGIN_FAILURES = 5;
+    protected const LOCK_DURATION_MINUTES = 10;
+
     public function login()
     {
         $payload = $this->requestData();
@@ -120,17 +123,144 @@ class Auth extends ApiController
             $this->errorResponse('请输入手机号和密码');
         }
 
+        $lockInfo = $this->checkLoginLock($mobile);
+        if ($lockInfo['locked']) {
+            $this->errorResponse(
+                sprintf('账号已锁定，请%d分钟后再试', (int)ceil($lockInfo['remaining_seconds'] / 60)),
+                400,
+                [
+                    'locked' => true,
+                    'remaining_seconds' => $lockInfo['remaining_seconds'],
+                ]
+            );
+        }
+
         $user = Db::table('users')->where('mobile', $mobile)->find();
         if (!$user) {
-            $this->errorResponse('账号不存在，请先注册');
+            $this->recordLoginFailure($mobile, null);
+            $remaining = self::MAX_LOGIN_FAILURES - 1;
+            $this->errorResponse(
+                sprintf('登录失败，密码错误%d次您的账号会被锁定%d分钟，您还有%d次机会', self::MAX_LOGIN_FAILURES, self::LOCK_DURATION_MINUTES, $remaining),
+                400,
+                [
+                    'remaining_attempts' => $remaining,
+                    'max_attempts' => self::MAX_LOGIN_FAILURES,
+                ]
+            );
         }
 
         if (empty($user['password']) || !password_verify($password, $user['password'])) {
-            $this->errorResponse('密码错误');
+            $failureInfo = $this->recordLoginFailure($mobile, $user['id']);
+            $remaining = self::MAX_LOGIN_FAILURES - $failureInfo['failure_count'];
+            
+            if ($remaining <= 0) {
+                $this->errorResponse(
+                    sprintf('登录失败，账号已被锁定%d分钟', self::LOCK_DURATION_MINUTES),
+                    400,
+                    [
+                        'locked' => true,
+                        'remaining_seconds' => self::LOCK_DURATION_MINUTES * 60,
+                    ]
+                );
+            }
+            
+            $this->errorResponse(
+                sprintf('登录失败，密码错误%d次您的账号会被锁定%d分钟，您还有%d次机会', self::MAX_LOGIN_FAILURES, self::LOCK_DURATION_MINUTES, $remaining),
+                400,
+                [
+                    'remaining_attempts' => $remaining,
+                    'max_attempts' => self::MAX_LOGIN_FAILURES,
+                ]
+            );
         }
 
+        $this->resetLoginFailure($mobile);
         $this->assertUserStatus($user);
         return $user;
+    }
+
+    protected function checkLoginLock(string $mobile): array
+    {
+        $record = Db::table('login_failure_records')
+            ->where('mobile', $mobile)
+            ->find();
+
+        if (!$record) {
+            return ['locked' => false, 'remaining_seconds' => 0];
+        }
+
+        if (empty($record['locked_until'])) {
+            return ['locked' => false, 'remaining_seconds' => 0];
+        }
+
+        $lockUntil = strtotime($record['locked_until']);
+        $now = time();
+
+        if ($lockUntil > $now) {
+            return [
+                'locked' => true,
+                'remaining_seconds' => $lockUntil - $now,
+            ];
+        }
+
+        $this->resetLoginFailure($mobile);
+        return ['locked' => false, 'remaining_seconds' => 0];
+    }
+
+    protected function recordLoginFailure(string $mobile, ?int $userId): array
+    {
+        $now = time();
+        $record = Db::table('login_failure_records')
+            ->where('mobile', $mobile)
+            ->find();
+
+        if ($record) {
+            $newFailureCount = $record['failure_count'] + 1;
+            $updateData = [
+                'failure_count' => $newFailureCount,
+                'last_failure_at' => date('Y-m-d H:i:s', $now),
+                'updated_at' => date('Y-m-d H:i:s', $now),
+            ];
+
+            if ($userId !== null && empty($record['user_id'])) {
+                $updateData['user_id'] = $userId;
+            }
+
+            if ($newFailureCount >= self::MAX_LOGIN_FAILURES) {
+                $updateData['locked_until'] = date('Y-m-d H:i:s', $now + self::LOCK_DURATION_MINUTES * 60);
+            }
+
+            Db::table('login_failure_records')
+                ->where('id', $record['id'])
+                ->update($updateData);
+
+            return [
+                'failure_count' => $newFailureCount,
+                'locked' => $newFailureCount >= self::MAX_LOGIN_FAILURES,
+            ];
+        }
+
+        Db::table('login_failure_records')->insert([
+            'mobile' => $mobile,
+            'user_id' => $userId,
+            'failure_count' => 1,
+            'last_failure_at' => date('Y-m-d H:i:s', $now),
+            'locked_until' => null,
+            'created_at' => date('Y-m-d H:i:s', $now),
+            'updated_at' => date('Y-m-d H:i:s', $now),
+        ]);
+
+        return [
+            'failure_count' => 1,
+            'locked' => false,
+        ];
+    }
+
+    protected function resetLoginFailure(string $mobile): void
+    {
+        Db::table('login_failure_records')
+            ->where('mobile', $mobile)
+            ->delete();
     }
 
     protected function loginByWeChat(array $payload): array
