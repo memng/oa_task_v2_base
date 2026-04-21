@@ -16,8 +16,8 @@
 
     <view v-if="activeTab === 'account'" class="card form-card">
       <view class="form">
-        <input v-model="form.mobile" placeholder="请输入手机号" maxlength="11" type="number" />
-        <input v-model="form.password" placeholder="请输入密码" maxlength="20" type="password" />
+        <input v-model="form.mobile" placeholder="请输入11位中国大陆手机号" maxlength="11" type="number" />
+        <input v-model="form.password" placeholder="请输入密码（数字和英文字符）" maxlength="20" type="password" />
         <button class="primary" :loading="loading" :disabled="loading" @click="loginByPassword">
           账号密码登录
         </button>
@@ -50,6 +50,16 @@ const activeTab = ref('account')
 const form = reactive({ mobile: '', password: '' })
 const loading = ref(false)
 
+const validateMobile = (mobile) => {
+  const mobileReg = /^1[3-9]\d{9}$/
+  return mobileReg.test(mobile)
+}
+
+const validatePassword = (password) => {
+  const passwordReg = /^[a-zA-Z0-9]+$/
+  return passwordReg.test(password)
+}
+
 const handleLoginSuccess = (payload) => {
   store.setToken(payload.token)
   store.setProfile(payload.profile)
@@ -66,8 +76,19 @@ const loginByPassword = async () => {
     uni.showToast({ title: '请输入手机号', icon: 'none' })
     return
   }
+  
+  if (!validateMobile(form.mobile)) {
+    uni.showToast({ title: '请输入正确的中国大陆手机号', icon: 'none' })
+    return
+  }
+  
   if (!form.password) {
     uni.showToast({ title: '请输入密码', icon: 'none' })
+    return
+  }
+  
+  if (!validatePassword(form.password)) {
+    uni.showToast({ title: '密码仅能包含数字和英文字符', icon: 'none' })
     return
   }
   loading.value = true
