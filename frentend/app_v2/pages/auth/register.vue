@@ -12,7 +12,7 @@
       </view>
       <view class="form-item">
         <text>登录密码</text>
-        <input v-model="form.password" placeholder="请输入至少8位（数字和英文字符）" type="password" />
+        <input v-model="form.password" placeholder="请输入密码（数字和英文字符）" type="password" />
       </view>
       <view class="form-item">
         <text>确认密码</text>
@@ -181,7 +181,7 @@ const validateMobile = (mobile) => {
 }
 
 const validatePassword = (password) => {
-  const passwordReg = /^[a-zA-Z0-9]{8,}$/
+  const passwordReg = /^[a-zA-Z0-9]$/
   return passwordReg.test(password)
 }
 
@@ -211,7 +211,7 @@ const validateForm = () => {
   }
   
   if (!validatePassword(form.password)) {
-    uni.showToast({ title: '密码至少8位，仅包含数字和英文字符', icon: 'none' })
+    uni.showToast({ title: '请输入密码，仅包含数字和英文字符', icon: 'none' })
     return false
   }
   
