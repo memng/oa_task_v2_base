@@ -73,6 +73,7 @@
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../utils/request'
+import { validateMobile, validatePassword } from '../../utils/validate'
 
 const form = reactive({
   name: '',
@@ -173,16 +174,6 @@ const bindWechat = () => {
       binding.value = false
     }
   })
-}
-
-const validateMobile = (mobile) => {
-  const mobileReg = /^1[3-9]\d{9}$/
-  return mobileReg.test(mobile)
-}
-
-const validatePassword = (password) => {
-  const passwordReg = /^[a-zA-Z0-9]$/
-  return passwordReg.test(password)
 }
 
 const validateForm = () => {

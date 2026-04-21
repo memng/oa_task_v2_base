@@ -41,6 +41,7 @@ import { reactive, ref } from 'vue'
 import store from '../../store'
 import { api } from '../../utils/request'
 import { startMessagePolling } from '../../utils/message-center'
+import { validateMobile, validatePassword } from '../../utils/validate'
 
 const tabs = [
   { key: 'account', label: '账号登录' },
@@ -49,16 +50,6 @@ const tabs = [
 const activeTab = ref('account')
 const form = reactive({ mobile: '', password: '' })
 const loading = ref(false)
-
-const validateMobile = (mobile) => {
-  const mobileReg = /^1[3-9]\d{9}$/
-  return mobileReg.test(mobile)
-}
-
-const validatePassword = (password) => {
-  const passwordReg = /^[a-zA-Z0-9]+$/
-  return passwordReg.test(password)
-}
 
 const handleLoginSuccess = (payload) => {
   store.setToken(payload.token)
