@@ -62,7 +62,7 @@ class Upload extends ApiController
         $isValidMime = in_array($fileMime, $allowedMimes);
         $isValidExtension = in_array($extension, $allowedExtensions);
 
-        if (!$isValidMime && !$isValidExtension) {
+        if (!$isValidMime || !$isValidExtension) {
             $this->errorResponse('仅支持 jpg、png、pdf 格式的文件');
         }
 
