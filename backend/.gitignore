@@ -3,3 +3,5 @@
 /vendor
 *.log
 .env
+.phpunit.result.cache
+coverage-report/
