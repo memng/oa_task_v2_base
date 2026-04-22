@@ -141,7 +141,22 @@ const submit = async () => {
     form.reason = ''
     fetchRequests()
   } catch (error) {
-    uni.showToast({ title: '提交失败', icon: 'none' })
+    if (error && error.data && error.data.conflicts && error.data.conflicts.length > 0) {
+      const conflicts = error.data.conflicts
+      const conflictDetails = conflicts.map((item) => {
+        const typeLabel = formatType(item.leave_type)
+        const statusLabelText = statusLabel(item.status)
+        return `${typeLabel}(${statusLabelText})：${item.conflict_range}`
+      }).join('\n')
+      uni.showModal({
+        title: '时间冲突',
+        content: `您已有 ${conflicts.length} 条请假记录与当前申请时间冲突：\n${conflictDetails}`,
+        showCancel: false,
+        confirmText: '知道了'
+      })
+    } else {
+      uni.showToast({ title: error?.message || '提交失败', icon: 'none' })
+    }
   } finally {
     submitting.value = false
   }
