@@ -1,5 +1,5 @@
 <template>
-  <scroll-view scroll-y class="page">
+  <scroll-view scroll-y class="page" @scrolltolower="onScrollToLower">
     <view class="card">
       <view class="section-title">请假申请</view>
       <view class="form-item">
@@ -42,7 +42,34 @@
 
     <view class="card">
       <view class="section-title">我的申请记录</view>
-      <view v-if="!requests.length" class="empty">暂无记录</view>
+      <view class="filters">
+        <view class="filter-item">
+          <text class="filter-label">状态</text>
+          <picker :range="statusOptions" range-key="label" @change="onStatusChange">
+            <view class="picker">{{ currentStatus.label }}</view>
+          </picker>
+        </view>
+        <view class="filter-item">
+          <text class="filter-label">开始日期</text>
+          <view class="date-filter-row">
+            <picker mode="date" :value="filterStartDate" @change="onFilterStartDateChange">
+              <view class="picker">{{ filterStartDate || '不限' }}</view>
+            </picker>
+            <view v-if="filterStartDate" class="clear-btn" @click="clearFilterStartDate">×</view>
+          </view>
+        </view>
+        <view class="filter-item">
+          <text class="filter-label">结束日期</text>
+          <view class="date-filter-row">
+            <picker mode="date" :value="filterEndDate" @change="onFilterEndDateChange">
+              <view class="picker">{{ filterEndDate || '不限' }}</view>
+            </picker>
+            <view v-if="filterEndDate" class="clear-btn" @click="clearFilterEndDate">×</view>
+          </view>
+        </view>
+      </view>
+      <view v-if="dateRangeError" class="error-tip">{{ dateRangeError }}</view>
+      <view v-if="!requests.length && !loading && !dateRangeError" class="empty">暂无记录</view>
       <view class="record" v-for="item in requests" :key="item.id">
         <view class="record-row">
           <text>{{ formatType(item.leave_type) }}</text>
@@ -54,6 +81,8 @@
         </view>
         <view class="reason">{{ item.reason || '无备注' }}</view>
       </view>
+      <view v-if="loading" class="loading">加载中...</view>
+      <view v-if="!hasMore && requests.length > 0" class="no-more">没有更多了</view>
     </view>
   </scroll-view>
 </template>
@@ -69,7 +98,21 @@ const leaveTypes = [
   { label: '事假', value: 'personal' },
   { label: '其他', value: 'other' }
 ]
+
+const statusOptions = [
+  { label: '全部', value: '' },
+  { label: '审批中', value: 'pending' },
+  { label: '已通过', value: 'approved' },
+  { label: '已驳回', value: 'rejected' },
+  { label: '已取消', value: 'cancelled' }
+]
+
 const currentType = ref(leaveTypes[0])
+const currentStatus = ref(statusOptions[0])
+const filterStartDate = ref('')
+const filterEndDate = ref('')
+const dateRangeError = ref('')
+
 const form = reactive({
   leave_type: currentType.value.value,
   start_date: '',
@@ -78,8 +121,13 @@ const form = reactive({
   end_time: '',
   reason: ''
 })
+
 const requests = ref([])
 const submitting = ref(false)
+const loading = ref(false)
+const hasMore = ref(true)
+const page = ref(1)
+const pageSize = ref(2)
 
 const durationLabel = computed(() => {
   const hours = computeDuration()
@@ -93,6 +141,51 @@ const onTypeChange = (e) => {
 
 const onDateChange = (key, value) => {
   form[key] = value
+}
+
+const onStatusChange = (e) => {
+  currentStatus.value = statusOptions[e.detail.value]
+  dateRangeError.value = ''
+  resetAndFetch()
+}
+
+const validateDateRange = () => {
+  if (filterStartDate.value && filterEndDate.value) {
+    const start = new Date(filterStartDate.value.replace(/-/g, '/')).getTime()
+    const end = new Date(filterEndDate.value.replace(/-/g, '/')).getTime()
+    if (start > end) {
+      dateRangeError.value = '开始日期不能大于结束日期'
+      return false
+    }
+  }
+  dateRangeError.value = ''
+  return true
+}
+
+const onFilterStartDateChange = (e) => {
+  filterStartDate.value = e.detail.value
+  if (validateDateRange()) {
+    resetAndFetch()
+  }
+}
+
+const onFilterEndDateChange = (e) => {
+  filterEndDate.value = e.detail.value
+  if (validateDateRange()) {
+    resetAndFetch()
+  }
+}
+
+const clearFilterStartDate = () => {
+  filterStartDate.value = ''
+  dateRangeError.value = ''
+  resetAndFetch()
+}
+
+const clearFilterEndDate = () => {
+  filterEndDate.value = ''
+  dateRangeError.value = ''
+  resetAndFetch()
 }
 
 const buildDateTime = (date, time) => {
@@ -139,7 +232,7 @@ const submit = async () => {
     form.end_date = ''
     form.end_time = ''
     form.reason = ''
-    fetchRequests()
+    resetAndFetch()
   } catch (error) {
     if (error && error.data && error.data.conflicts && error.data.conflicts.length > 0) {
       const conflicts = error.data.conflicts
@@ -163,11 +256,59 @@ const submit = async () => {
 }
 
 const fetchRequests = async () => {
+  if (loading.value || !hasMore.value) return
+  
+  loading.value = true
   try {
-    const res = await api.leaveList()
-    requests.value = res.items || []
+    const params = {
+      page: page.value,
+      page_size: pageSize.value
+    }
+    
+    if (currentStatus.value.value) {
+      params.status = currentStatus.value.value
+    }
+    if (filterStartDate.value) {
+      params.start_date = filterStartDate.value
+    }
+    if (filterEndDate.value) {
+      params.end_date = filterEndDate.value
+    }
+    
+    const res = await api.leaveList(params)
+    const items = res.items || []
+    
+    if (page.value === 1) {
+      requests.value = items
+    } else {
+      requests.value = [...requests.value, ...items]
+    }
+    
+    const total = res.meta?.total || 0
+    hasMore.value = requests.value.length < total
   } catch (error) {
-    requests.value = []
+    if (page.value === 1) {
+      requests.value = []
+    }
+    hasMore.value = false
+  } finally {
+    loading.value = false
+  }
+}
+
+const resetAndFetch = () => {
+  page.value = 1
+  hasMore.value = true
+  requests.value = []
+  if (!dateRangeError.value) {
+    fetchRequests()
+  }
+}
+
+const onScrollToLower = () => {
+  if (!loading.value && hasMore.value && !dateRangeError.value) {
+    page.value++
+    fetchRequests()
   }
 }
 
@@ -189,12 +330,17 @@ const formatRange = (start, end) => {
 }
 
 onShow(() => {
-  fetchRequests()
+  filterStartDate.value = ''
+  filterEndDate.value = ''
+  currentStatus.value = statusOptions[0]
+  dateRangeError.value = ''
+  resetAndFetch()
 })
 </script>
 
 <style scoped lang="scss">
 .page {
+  height: 100vh;
   padding: 32rpx;
   background: #f6f7fb;
 }
@@ -235,6 +381,52 @@ textarea {
   color: #fff;
   border-radius: 32rpx;
 }
+.filters {
+  margin-bottom: 16rpx;
+  padding: 16rpx;
+  background: #f7f8fa;
+  border-radius: 16rpx;
+}
+.filter-item {
+  margin-bottom: 12rpx;
+}
+.filter-item:last-child {
+  margin-bottom: 0;
+}
+.filter-label {
+  display: block;
+  margin-bottom: 8rpx;
+  font-size: 24rpx;
+  color: #666;
+}
+.date-filter-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.date-filter-row .picker {
+  flex: 1;
+  padding-right: 60rpx;
+}
+.clear-btn {
+  position: absolute;
+  right: 16rpx;
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  color: #999;
+  line-height: 1;
+}
+.error-tip {
+  color: #ff4d4f;
+  font-size: 24rpx;
+  text-align: center;
+  padding: 16rpx 0;
+  margin-bottom: 16rpx;
+}
 .record {
   padding: 16rpx 0;
   border-bottom: 1rpx solid #f0f0f0;
@@ -271,5 +463,12 @@ textarea {
   text-align: center;
   color: #999;
   padding: 40rpx 0;
+}
+.loading,
+.no-more {
+  text-align: center;
+  color: #999;
+  padding: 20rpx 0;
+  font-size: 24rpx;
 }
 </style>

@@ -4,17 +4,46 @@ namespace app\api\controller;
 
 use app\common\controller\ApiController;
 use think\facade\Db;
+use think\facade\Request;
 
 class Leave extends ApiController
 {
     public function index()
     {
-        $items = Db::table('leave_requests')
-            ->where('user_id', $this->user()['id'])
+        $page = (int)Request::get('page', 1);
+        $pageSize = (int)Request::get('page_size', 2);
+        $user = $this->user();
+        $query = Db::table('leave_requests');
+
+        $query->where('user_id', $user['id']);
+
+        if ($status = Request::get('status')) {
+            $query->where('status', $status);
+        }
+
+        if ($startDate = Request::get('start_date')) {
+            $query->where('start_at', '>=', "{$startDate} 00:00:00");
+        }
+        if ($endDate = Request::get('end_date')) {
+            $query->where('end_at', '<=', "{$endDate} 23:59:59");
+        }
+
+        $countQuery = clone $query;
+        $total = $countQuery->count();
+        $list = $query
             ->order('created_at', 'desc')
+            ->page($page, $pageSize)
             ->select()
             ->toArray();
-        return $this->success(['items' => $items]);
+
+        return $this->success([
+            'items' => $list,
+            'meta'  => [
+                'page'       => $page,
+                'page_size'  => $pageSize,
+                'total'      => $total,
+            ],
+        ]);
     }
 
     public function save()
