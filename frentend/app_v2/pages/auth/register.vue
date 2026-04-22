@@ -73,6 +73,7 @@
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../utils/request'
+import { validateMobile, validatePassword, validateRequiredFields } from '../../utils/validate'
 
 const form = reactive({
   name: '',
@@ -175,16 +176,6 @@ const bindWechat = () => {
   })
 }
 
-const validateMobile = (mobile) => {
-  const mobileReg = /^1[3-9]\d{9}$/
-  return mobileReg.test(mobile)
-}
-
-const validatePassword = (password) => {
-  const passwordReg = /^[a-zA-Z0-9]$/
-  return passwordReg.test(password)
-}
-
 const validateForm = () => {
   const requiredFields = [
     { key: 'name', label: '真实姓名' },
@@ -198,11 +189,9 @@ const validateForm = () => {
     { key: 'bank_account_name', label: '持卡人姓名' },
     { key: 'bank_name', label: '开户银行' }
   ]
-  for (const field of requiredFields) {
-    if (!form[field.key]) {
-      uni.showToast({ title: `请填写${field.label}`, icon: 'none' })
-      return false
-    }
+  
+  if (!validateRequiredFields(form, requiredFields)) {
+    return false
   }
   
   if (!validateMobile(form.mobile)) {

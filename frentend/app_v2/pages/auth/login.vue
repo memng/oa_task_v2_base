@@ -44,6 +44,7 @@ import { reactive, ref, computed, watch, onUnmounted } from 'vue'
 import store from '../../store'
 import { api } from '../../utils/request'
 import { startMessagePolling } from '../../utils/message-center'
+import { validateMobile, validatePassword, validateRequiredFields } from '../../utils/validate'
 
 const tabs = [
   { key: 'account', label: '账号登录' },
@@ -113,16 +114,6 @@ onUnmounted(() => {
   stopCountdown()
 })
 
-const validateMobile = (mobile) => {
-  const mobileReg = /^1[3-9]\d{9}$/
-  return mobileReg.test(mobile)
-}
-
-const validatePassword = (password) => {
-  const passwordReg = /^[a-zA-Z0-9]+$/
-  return passwordReg.test(password)
-}
-
 const handleLoginSuccess = (payload) => {
   store.setToken(payload.token)
   store.setProfile(payload.profile)
@@ -135,18 +126,17 @@ const goRegister = () => {
 }
 
 const loginByPassword = async () => {
-  if (!form.mobile) {
-    uni.showToast({ title: '请输入手机号', icon: 'none' })
+  const requiredFields = [
+    { key: 'mobile', message: '请输入手机号' },
+    { key: 'password', message: '请输入密码' }
+  ]
+  
+  if (!validateRequiredFields(form, requiredFields)) {
     return
   }
   
   if (!validateMobile(form.mobile)) {
     uni.showToast({ title: '请输入正确的中国大陆手机号', icon: 'none' })
-    return
-  }
-  
-  if (!form.password) {
-    uni.showToast({ title: '请输入密码', icon: 'none' })
     return
   }
   
