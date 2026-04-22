@@ -36,7 +36,7 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { api, uploadFile } from '../../utils/request'
+import { api, uploadReceipt } from '../../utils/request'
 
 const types = [
   { label: '差旅费用', value: 'travel' },
@@ -54,21 +54,62 @@ const receiptUrl = ref('')
 const uploading = ref(false)
 const submitting = ref(false)
 
-const onTypeChange = (e) => {
-  currentType.value = types[e.detail.value]
-  form.type = currentType.value.value
+const MAX_FILE_SIZE = 1024 * 1024
+const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'pdf']
+
+const getFileExtension = (filePath) => {
+  const ext = filePath.split('.').pop().toLowerCase()
+  return ext
 }
+
+const validateFile = (filePath, size = null) => {
+  const extension = getFileExtension(filePath)
+  if (!ALLOWED_EXTENSIONS.includes(extension)) {
+    return {
+      valid: false,
+      message: '仅支持 jpg、png、pdf 格式的文件'
+    }
+  }
+  if (size && size > MAX_FILE_SIZE) {
+    return {
+      valid: false,
+      message: '文件大小不能超过1MB'
+    }
+  }
+  return { valid: true }
+}
+
+const getFileInfo = (filePath) =>
+  new Promise((resolve, reject) => {
+    uni.getFileInfo({
+      filePath,
+      success: (res) => {
+        resolve({
+          size: res.size,
+          digest: res.digest
+        })
+      },
+      fail: reject
+    })
+  })
 
 const chooseFile = () =>
   new Promise((resolve, reject) => {
-    if (typeof uni.chooseMedia === 'function') {
-      uni.chooseMedia({
+    if (typeof uni.chooseMessageFile === 'function') {
+      uni.chooseMessageFile({
         count: 1,
-        mediaType: ['image'],
-        sourceType: ['album', 'camera'],
+        type: 'all',
         success: (res) => {
           const file = res.tempFiles?.[0]
-          resolve(file?.tempFilePath || file?.path || '')
+          if (file) {
+            resolve({
+              path: file.path || file.tempFilePath,
+              name: file.name,
+              size: file.size
+            })
+          } else {
+            resolve(null)
+          }
         },
         fail: reject
       })
@@ -78,22 +119,52 @@ const chooseFile = () =>
       count: 1,
       sourceType: ['album', 'camera'],
       success: (res) => {
-        const path = res.tempFilePaths?.[0] || ''
-        resolve(path)
+        const path = res.tempFilePaths?.[0]
+        if (path) {
+          resolve({
+            path,
+            name: `image.${getFileExtension(path)}`,
+            size: null
+          })
+        } else {
+          resolve(null)
+        }
       },
       fail: reject
     })
   })
 
+const onTypeChange = (e) => {
+  currentType.value = types[e.detail.value]
+  form.type = currentType.value.value
+}
+
 const upload = async () => {
   if (uploading.value) return
   try {
     uploading.value = true
-    const path = await chooseFile()
-    if (!path) return
-    const result = await uploadFile(path)
+    const file = await chooseFile()
+    if (!file) return
+
+    let fileSize = file.size
+    if (!fileSize) {
+      try {
+        const fileInfo = await getFileInfo(file.path)
+        fileSize = fileInfo.size
+      } catch (e) {
+        console.error('获取文件信息失败', e)
+      }
+    }
+
+    const validation = validateFile(file.path, fileSize)
+    if (!validation.valid) {
+      uni.showToast({ title: validation.message, icon: 'none' })
+      return
+    }
+
+    const result = await uploadReceipt(file.path)
     form.receipt_media_id = result.media_id
-    receiptName.value = result.file_name || '票据附件'
+    receiptName.value = file.name || result.file_name || '票据附件'
     receiptUrl.value = result.url || ''
     uni.showToast({ title: '上传成功', icon: 'success' })
   } catch (error) {
