@@ -60,6 +60,7 @@ Route::group('api', function () {
 
     Route::get('chat/conversations', '\app\api\controller\Chat@conversations');
     Route::get('chat/rooms/:id/messages', '\app\api\controller\Chat@messages');
+    Route::get('chat/rooms/:roomId/messages/:messageId/readers', '\app\api\controller\Chat@messageReaders');
     Route::post('chat/rooms/:id/messages', '\app\api\controller\Chat@sendMessage');
     Route::post('chat/rooms/:id/read', '\app\api\controller\Chat@markRead');
     Route::post('chat/rooms', '\app\api\controller\Chat@create');

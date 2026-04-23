@@ -212,6 +212,9 @@ export const api = {
   chatMarkRead(id, payload = {}) {
     return request({ url: `/chat/rooms/${id}/read`, method: 'POST', data: payload })
   },
+  chatMessageReaders(roomId, messageId) {
+    return request({ url: `/chat/rooms/${roomId}/messages/${messageId}/readers` })
+  },
   intentOrders(params = {}) {
     return request({ url: '/intent-orders', data: params })
   },
