@@ -112,7 +112,7 @@ class Announcement extends ApiController
             Db::commit();
         } catch (\Exception $e) {
             Db::rollback();
-            $this->errorResponse('保存公告失败：' . $e->getMessage(), 500);
+            $this->errorResponse('保存公告失败，请稍后重试', 500);
         }
 
         return $this->success(['id' => $id], '公告已保存', 201);
