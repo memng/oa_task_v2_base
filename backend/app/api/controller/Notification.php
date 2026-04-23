@@ -3,6 +3,7 @@
 namespace app\api\controller;
 
 use app\common\controller\ApiController;
+use app\common\service\SecurityService;
 use think\facade\Db;
 use think\facade\Request;
 
@@ -68,6 +69,9 @@ class Notification extends ApiController
         if (empty($data['title']) || empty($data['content'])) {
             $this->errorResponse('通知标题与内容不能为空');
         }
+
+        $data = SecurityService::sanitizeArray($data, ['title', 'content']);
+
         $targets = $this->resolveTargetUserIds($data);
         if (empty($targets)) {
             $this->errorResponse('未找到可推送的用户');
@@ -76,7 +80,7 @@ class Notification extends ApiController
         $now = date('Y-m-d H:i:s');
         $payload = null;
         if (!empty($data['payload']) && is_array($data['payload'])) {
-            $payload = json_encode($data['payload'], JSON_UNESCAPED_UNICODE);
+            $payload = json_encode(SecurityService::sanitizeRecursive($data['payload']), JSON_UNESCAPED_UNICODE);
         }
         $rows = [];
         foreach ($targets as $userId) {
