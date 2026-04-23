@@ -164,5 +164,20 @@ export const api = {
   },
   consumeInventory(id, data) {
     return client.post(`/inventory/${id}/consume`, data)
+  },
+  adminShiftSchedules(params = {}) {
+    return client.get('/admin/shift-schedules', { params })
+  },
+  shiftScheduleDetail(id) {
+    return client.get(`/admin/shift-schedules/${id}`)
+  },
+  createShiftSchedule(data) {
+    return client.post('/admin/shift-schedules', data)
+  },
+  updateShiftSchedule(id, data) {
+    return client.put(`/admin/shift-schedules/${id}`, data)
+  },
+  deleteShiftSchedule(id) {
+    return client.delete(`/admin/shift-schedules/${id}`)
   }
 }

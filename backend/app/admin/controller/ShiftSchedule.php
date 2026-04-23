@@ -76,7 +76,6 @@ class ShiftSchedule extends AdminApiController
         
         $this->ensureNoDuplicateDeptRule($deptId, null);
         
-        $now = date('Y-m-d H:i:s');
         $id = Db::table('attendance_rules')->insertGetId([
             'name'                  => $name,
             'dept_id'               => $deptId,
@@ -97,8 +96,6 @@ class ShiftSchedule extends AdminApiController
             'early_threshold_minutes' => isset($payload['early_threshold_minutes']) ? (int)$payload['early_threshold_minutes'] : 30,
             'absent_after_minutes'  => isset($payload['absent_after_minutes']) ? (int)$payload['absent_after_minutes'] : 60,
             'status'                => isset($payload['status']) ? (int)$payload['status'] : 1,
-            'created_at'            => $now,
-            'updated_at'            => $now,
         ]);
         
         $shift = Db::table('attendance_rules')
@@ -221,7 +218,6 @@ class ShiftSchedule extends AdminApiController
             ]);
         }
         
-        $data['updated_at'] = date('Y-m-d H:i:s');
         Db::table('attendance_rules')->where('id', $id)->update($data);
         
         $shift = Db::table('attendance_rules')
@@ -272,8 +268,6 @@ class ShiftSchedule extends AdminApiController
             'early_threshold_minutes' => (int)($shift['early_threshold_minutes'] ?? 30),
             'absent_after_minutes'    => (int)($shift['absent_after_minutes'] ?? 60),
             'status'                  => (int)$shift['status'],
-            'created_at'              => $shift['created_at'],
-            'updated_at'              => $shift['updated_at'],
         ];
     }
 

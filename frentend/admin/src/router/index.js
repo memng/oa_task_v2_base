@@ -8,6 +8,7 @@ import Tasks from '../views/Tasks.vue'
 import OrderTaskSettings from '../views/OrderTaskSettings.vue'
 import Announcements from '../views/Announcements.vue'
 import Departments from '../views/Departments.vue'
+import ShiftSchedules from '../views/ShiftSchedules.vue'
 import Currencies from '../views/Currencies.vue'
 import Voltages from '../views/Voltages.vue'
 import UserAudit from '../views/UserAudit.vue'
@@ -37,6 +38,7 @@ const router = createRouter({
         { path: 'order-settings/voltages', component: Voltages },
         { path: 'announcements', component: Announcements },
         { path: 'departments', component: Departments },
+        { path: 'shift-schedules', component: ShiftSchedules },
         { path: 'suppliers', component: Suppliers },
         { path: 'inventory', component: Inventory },
         { path: 'reimburse', component: Reimburse },
