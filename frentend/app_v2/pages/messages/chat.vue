@@ -23,7 +23,7 @@
           <view v-else-if="msg.message_type === 'video'" class="media-content">
             <video class="media-video" :src="resolveMediaUrl(msg.storage_path)" :poster="resolveMediaUrl(msg.storage_path)" controls></video>
           </view>
-          <view v-else-if="msg.message_type === 'file'" class="file-content">
+          <view v-else-if="msg.message_type === 'file'" class="file-content" @click="handleFileClick(msg)">
             <view class="file-icon">
               <text class="file-icon-text">{{ getFileExtension(msg.file_name) }}</text>
             </view>
@@ -31,8 +31,8 @@
               <text class="file-name">{{ msg.file_name }}</text>
               <text class="file-size">{{ formatFileSize(msg.file_size) }}</text>
             </view>
-            <view class="file-download">
-              <text class="download-text">下载</text>
+            <view class="file-download" @click.stop="handleFileClick(msg)">
+              <text class="download-text">查看</text>
             </view>
           </view>
           <view v-else class="content">{{ msg.content || '[不支持的消息类型]' }}</view>
@@ -242,73 +242,114 @@ const previewImage = (msg) => {
 
 const handleMessageClick = (msg) => {
   if (msg.message_type === 'file') {
-    downloadFile(msg)
+    handleFileClick(msg)
   }
 }
 
-const downloadFile = (msg) => {
+const handleFileClick = (msg) => {
+  const fileName = msg.file_name || 'download'
+  
+  uni.showModal({
+    title: '查看文件',
+    content: `确定要查看文件 "${fileName}" 吗？`,
+    success: (modalRes) => {
+      if (modalRes.confirm) {
+        downloadAndOpenFile(msg)
+      }
+    }
+  })
+}
+
+const getDocumentFileType = (fileName) => {
+  if (!fileName) return undefined
+  
+  const ext = fileName.split('.').pop().toLowerCase()
+  
+  const typeMap = {
+    'doc': 'doc',
+    'docx': 'docx',
+    'xls': 'xls',
+    'xlsx': 'xlsx',
+    'ppt': 'ppt',
+    'pptx': 'pptx',
+    'pdf': 'pdf',
+    'txt': 'txt',
+    'html': 'html',
+    'htm': 'html',
+    'jpg': 'jpg',
+    'jpeg': 'jpg',
+    'png': 'png',
+    'gif': 'gif',
+    'bmp': 'bmp',
+    'webp': 'webp'
+  }
+  
+  return typeMap[ext] || undefined
+}
+
+const downloadAndOpenFile = (msg) => {
   const url = resolveMediaUrl(msg.storage_path)
   const fileName = msg.file_name || 'download'
   const token = store.state.token
+  const fileType = getDocumentFileType(fileName)
   
-  uni.showModal({
-    title: '下载文件',
-    content: `确定要下载文件 "${fileName}" 吗？`,
-    success: (modalRes) => {
-      if (modalRes.confirm) {
-        uni.showLoading({ title: '下载中...' })
+  uni.showLoading({ title: '加载中...' })
+  
+  const downloadOptions = {
+    url: url,
+    success: (res) => {
+      if (res.statusCode === 200) {
+        const filePath = res.tempFilePath
+        uni.hideLoading()
         
-        const downloadOptions = {
-          url: url,
-          success: (res) => {
-            if (res.statusCode === 200) {
-              const filePath = res.tempFilePath
-              uni.hideLoading()
-              uni.openDocument({
-                filePath: filePath,
-                showMenu: true,
-                success: () => {
-                  console.log('文件打开成功')
-                },
-                fail: (err) => {
-                  console.error('打开文件失败:', err)
-                  uni.showModal({
-                    title: '下载完成',
-                    content: '文件已下载完成，您可以在文件管理器中查看。\n临时路径: ' + filePath,
-                    showCancel: false
-                  })
-                }
-              })
-            } else {
-              uni.hideLoading()
-              uni.showToast({ 
-                title: '下载失败: HTTP ' + res.statusCode, 
-                icon: 'none',
-                duration: 3000
-              })
-            }
+        const openOptions = {
+          filePath: filePath,
+          showMenu: true,
+          success: () => {
+            console.log('文件打开成功')
           },
           fail: (err) => {
-            uni.hideLoading()
-            console.error('下载失败:', err)
-            uni.showToast({ 
-              title: '下载失败: ' + (err.errMsg || '网络错误'), 
+            console.error('打开文件失败:', err)
+            uni.showToast({
+              title: '无法打开此文件类型',
               icon: 'none',
               duration: 3000
             })
           }
         }
         
-        if (token) {
-          downloadOptions.header = {
-            Authorization: `Bearer ${token}`
-          }
+        if (fileType) {
+          openOptions.fileType = fileType
         }
         
-        uni.downloadFile(downloadOptions)
+        uni.openDocument(openOptions)
+      } else {
+        uni.hideLoading()
+        uni.showToast({ 
+          title: '加载失败: HTTP ' + res.statusCode, 
+          icon: 'none',
+          duration: 3000
+        })
       }
+    },
+    fail: (err) => {
+      uni.hideLoading()
+      console.error('下载失败:', err)
+      uni.showToast({ 
+        title: '加载失败: ' + (err.errMsg || '网络错误'), 
+        icon: 'none',
+        duration: 3000
+      })
     }
-  })
+  }
+  
+  if (token) {
+    downloadOptions.header = {
+      Authorization: `Bearer ${token}`
+    }
+  }
+  
+  uni.downloadFile(downloadOptions)
 }
 
 const getFileExtension = (fileName) => {
