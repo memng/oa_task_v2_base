@@ -85,6 +85,42 @@ export function uploadFile(filePath, formData = {}) {
   })
 }
 
+export function uploadReceipt(filePath, formData = {}) {
+  const token = store.state.token
+  return new Promise((resolve, reject) => {
+    uni.uploadFile({
+      url: `${BASE_URL}/upload/receipt`,
+      filePath,
+      name: 'file',
+      formData,
+      header: {
+        Authorization: token ? `Bearer ${token}` : ''
+      },
+      success: (res) => {
+        try {
+          const data = JSON.parse(res.data || '{}')
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            const payload = data.data || {}
+            if (payload.url) {
+              payload.url = resolveAssetUrl(payload.url)
+            }
+            resolve(payload)
+          } else {
+            uni.showToast({ title: data.message || '上传失败', icon: 'none' })
+            reject(data)
+          }
+        } catch (error) {
+          reject(error)
+        }
+      },
+      fail: (err) => {
+        uni.showToast({ title: '上传失败', icon: 'none' })
+        reject(err)
+      }
+    })
+  })
+}
+
 export const api = {
   login(payload) {
     return request({ url: '/auth/login', method: 'POST', data: payload })

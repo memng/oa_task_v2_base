@@ -82,6 +82,7 @@ Route::group('api', function () {
     Route::get('currencies', '\app\api\controller\Currency@index');
 
     Route::post('upload', '\app\api\controller\Upload@save');
+    Route::post('upload/receipt', '\app\api\controller\Upload@receipt');
 
     Route::group('admin', function () {
         Route::post('auth/login', '\app\admin\controller\Auth@login');
