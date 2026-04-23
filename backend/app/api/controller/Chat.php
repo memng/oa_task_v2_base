@@ -256,6 +256,14 @@ class Chat extends ApiController
         
         $this->ensureMembership($roomId, $userId);
 
+        $message = Db::table('chat_messages')
+            ->where('id', $messageId)
+            ->where('room_id', $roomId)
+            ->field(['sender_id'])
+            ->find();
+        
+        $senderId = $message ? (int)$message['sender_id'] : 0;
+
         $rawMembers = Db::table('chat_members')->alias('cm')
             ->leftJoin('users u', 'u.id = cm.user_id')
             ->where('cm.room_id', $roomId)
@@ -273,6 +281,11 @@ class Chat extends ApiController
         
         foreach ($rawMembers as $item) {
             $memberId = (int)$item['user_id'];
+            
+            if ($memberId === $senderId) {
+                continue;
+            }
+            
             $lastReadId = (int)($item['last_read_message_id'] ?? 0);
             
             $memberInfo = [

@@ -39,14 +39,33 @@
           <view class="meta">
             <text v-if="!isMine(msg)">{{ msg.sender_name || '' }} · </text>
             <text>{{ msg.created_at }}</text>
-            <text v-if="isMine(msg)" class="read-status" @click.stop="handleReadStatusClick(msg)">
-              <text v-if="roomInfo.type === 'direct'" :class="{ read: msg.read_status === 'read' }">
+            <view v-if="isMine(msg)" class="read-status-container">
+              <text v-if="roomInfo.type === 'direct'" 
+                class="read-status" 
+                :class="{ read: msg.read_status === 'read' }"
+                @click.stop="handleReadStatusClick(msg, 'all')">
                 {{ msg.read_status === 'read' ? '已读' : '未读' }}
               </text>
-              <text v-else-if="roomInfo.type === 'group'" class="group-read-status">
-                {{ msg.read_count }}人已读，{{ msg.unread_count }}人未读
-              </text>
-            </text>
+              <view v-else-if="roomInfo.type === 'group'" class="group-read-container">
+                <text v-if="msg.read_count > 0" 
+                  class="read-status clickable" 
+                  @click.stop="handleReadStatusClick(msg, 'read')">
+                  {{ msg.read_count }}人已读
+                </text>
+                <text v-else class="read-status">
+                  {{ msg.read_count }}人已读
+                </text>
+                <text class="separator">，</text>
+                <text v-if="msg.unread_count > 0" 
+                  class="read-status clickable" 
+                  @click.stop="handleReadStatusClick(msg, 'unread')">
+                  {{ msg.unread_count }}人未读
+                </text>
+                <text v-else class="read-status">
+                  {{ msg.unread_count }}人未读
+                </text>
+              </view>
+            </view>
           </view>
         </view>
       </view>
@@ -82,22 +101,28 @@
           <text class="popup-close" @click="closeReadStatusPopup">×</text>
         </view>
         <scroll-view scroll-y class="popup-body">
-          <view v-if="readStatusPopup.readers.length > 0" class="member-section">
+          <view v-if="readStatusPopup.showType === 'all' || readStatusPopup.showType === 'read'" class="member-section">
             <view class="section-title">已读 ({{ readStatusPopup.readers.length }})</view>
-            <view class="member-list">
+            <view v-if="readStatusPopup.readers.length > 0" class="member-list">
               <view v-for="member in readStatusPopup.readers" :key="member.id" class="member-item">
                 <image class="member-avatar" :src="resolveMemberAvatar(member)" mode="aspectFill" />
                 <text class="member-name">{{ member.name }}</text>
               </view>
             </view>
+            <view v-else class="empty-members">
+              <text>暂无已读成员</text>
+            </view>
           </view>
-          <view v-if="readStatusPopup.unreaders.length > 0" class="member-section">
+          <view v-if="readStatusPopup.showType === 'all' || readStatusPopup.showType === 'unread'" class="member-section">
             <view class="section-title">未读 ({{ readStatusPopup.unreaders.length }})</view>
-            <view class="member-list">
+            <view v-if="readStatusPopup.unreaders.length > 0" class="member-list">
               <view v-for="member in readStatusPopup.unreaders" :key="member.id" class="member-item">
                 <image class="member-avatar" :src="resolveMemberAvatar(member)" mode="aspectFill" />
                 <text class="member-name">{{ member.name }}</text>
               </view>
+            </view>
+            <view v-else class="empty-members">
+              <text>暂无未读成员</text>
             </view>
           </view>
         </scroll-view>
@@ -123,6 +148,7 @@ const scrollTarget = ref('')
 const readStatusPopup = ref({
   visible: false,
   title: '',
+  showType: 'all',
   readers: [],
   unreaders: []
 })
@@ -292,14 +318,31 @@ const handleMessageClick = (msg) => {
   }
 }
 
-const handleReadStatusClick = async (msg) => {
+const handleReadStatusClick = async (msg, showType = 'all') => {
   if (!isMine(msg)) return
   
   try {
     const res = await api.chatMessageReaders(roomId.value, msg.id)
+    
+    console.log('API返回数据:', res)
+    console.log('readers:', res.readers)
+    console.log('unreaders:', res.unreaders)
+    
+    let title = '消息状态'
+    if (roomInfo.value.type === 'group') {
+      if (showType === 'read') {
+        title = '已读成员'
+      } else if (showType === 'unread') {
+        title = '未读成员'
+      } else {
+        title = '消息已读状态'
+      }
+    }
+    
     readStatusPopup.value = {
       visible: true,
-      title: roomInfo.value.type === 'direct' ? '消息状态' : '消息已读状态',
+      title: title,
+      showType: showType,
       readers: res.readers || [],
       unreaders: res.unreaders || []
     }
@@ -655,16 +698,26 @@ onUnload(() => {
   color: #999;
   margin-top: 160rpx;
 }
-.read-status {
+.read-status-container {
+  display: inline-flex;
+  align-items: center;
   margin-left: 16rpx;
-  padding: 4rpx 8rpx;
-  border-radius: 4rpx;
 }
-.read-status .read {
+.group-read-container {
+  display: inline-flex;
+  align-items: center;
+}
+.read-status {
+  padding: 4rpx 0;
+}
+.read-status.read {
   color: #52c41a;
 }
-.group-read-status {
-  color: rgba(255, 255, 255, 0.8);
+.read-status.clickable {
+  text-decoration: underline;
+}
+.separator {
+  color: rgba(255, 255, 255, 0.7);
 }
 .popup-mask {
   position: fixed;
@@ -744,5 +797,11 @@ onUnload(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
+}
+.empty-members {
+  padding: 32rpx 0;
+  text-align: center;
+  color: #999;
+  font-size: 26rpx;
 }
 </style>
