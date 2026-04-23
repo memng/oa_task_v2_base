@@ -3,6 +3,7 @@
 namespace app\api\controller;
 
 use app\common\controller\ApiController;
+use app\common\service\SecurityService;
 use think\facade\Db;
 use think\facade\Request;
 
@@ -62,6 +63,9 @@ class Announcement extends ApiController
         if (empty($data['title']) || empty($data['content'])) {
             $this->errorResponse('标题与内容不能为空');
         }
+
+        $data = SecurityService::sanitizeArray($data, ['title', 'content']);
+
         $status = $data['publish_status'] ?? 'draft';
         $id = Db::table('announcements')->insertGetId([
             'title'          => $data['title'],

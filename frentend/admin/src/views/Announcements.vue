@@ -65,6 +65,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { api } from '../api'
+import { sanitizeObject } from '../utils/security'
 
 const list = ref([])
 const form = reactive({ title: '', category: 'general', content: '' })
@@ -85,7 +86,8 @@ const publish = async () => {
   if (!form.title || !form.content) {
     return ElMessage.error('请填写完整')
   }
-  await api.publishAnnouncement({ ...form, publish_status: 'published' })
+  const payload = sanitizeObject({ ...form, publish_status: 'published' }, ['title', 'content'])
+  await api.publishAnnouncement(payload)
   Object.assign(form, { title: '', category: 'general', content: '' })
   fetchAnnouncements()
 }
@@ -97,11 +99,11 @@ const sendNotification = async () => {
   if (notifyForm.target_type === 'department' && !notifyForm.dept_id) {
     return ElMessage.error('请选择部门')
   }
-  const payload = {
+  const payload = sanitizeObject({
     title: notifyForm.title,
     content: notifyForm.content,
     target_type: notifyForm.target_type
-  }
+  }, ['title', 'content'])
   if (notifyForm.target_type === 'department') {
     payload.dept_id = notifyForm.dept_id
   }
