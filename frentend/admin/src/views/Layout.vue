@@ -14,6 +14,7 @@
         </el-sub-menu>
         <el-menu-item index="/announcements">公告</el-menu-item>
         <el-menu-item index="/departments">部门管理</el-menu-item>
+        <el-menu-item index="/shift-schedules">班次设置</el-menu-item>
         <el-menu-item index="/suppliers">供应商</el-menu-item>
         <el-menu-item index="/inventory">库存</el-menu-item>
         <el-menu-item index="/reimburse">报销审批</el-menu-item>
