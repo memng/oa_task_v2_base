@@ -153,6 +153,7 @@ class Chat extends ApiController
         }
         $messages = Db::table('chat_messages')->alias('m')
             ->leftJoin('users u', 'u.id = m.sender_id')
+            ->leftJoin('media_assets ma', 'ma.id = m.media_id')
             ->where('m.room_id', $roomId)
             ->order('m.id', 'desc')
             ->limit($limit)
@@ -166,6 +167,11 @@ class Chat extends ApiController
                 'm.created_at',
                 'u.name as sender_name',
                 'u.avatar_url as sender_avatar',
+                'ma.file_name',
+                'ma.mime_type',
+                'ma.file_type',
+                'ma.storage_path',
+                'ma.file_size',
             ])
             ->select()
             ->toArray();
@@ -230,6 +236,7 @@ class Chat extends ApiController
 
         $message = Db::table('chat_messages')->alias('m')
             ->leftJoin('users u', 'u.id = m.sender_id')
+            ->leftJoin('media_assets ma', 'ma.id = m.media_id')
             ->where('m.id', $messageId)
             ->field([
                 'm.id',
@@ -241,6 +248,11 @@ class Chat extends ApiController
                 'm.created_at',
                 'u.name as sender_name',
                 'u.avatar_url as sender_avatar',
+                'ma.file_name',
+                'ma.mime_type',
+                'ma.file_type',
+                'ma.storage_path',
+                'ma.file_size',
             ])
             ->find();
 
