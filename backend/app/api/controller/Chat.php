@@ -286,7 +286,12 @@ class Chat extends ApiController
                 continue;
             }
             
-            $lastReadId = (int)($item['last_read_message_id'] ?? 0);
+            $lastReadId = $item['last_read_message_id'];
+            if ($lastReadId === null || $lastReadId === '') {
+                $lastReadId = 0;
+            } else {
+                $lastReadId = (int)$lastReadId;
+            }
             
             $memberInfo = [
                 'id'     => $memberId,
@@ -304,6 +309,12 @@ class Chat extends ApiController
         return $this->success([
             'readers' => $readers,
             'unreaders' => $unreaders,
+            '_debug' => [
+                'room_id' => $roomId,
+                'message_id' => $messageId,
+                'sender_id' => $senderId,
+                'total_members' => count($rawMembers),
+            ],
         ]);
     }
 
