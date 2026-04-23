@@ -66,6 +66,9 @@ Route::group('api', function () {
     Route::post('chat/rooms', '\app\api\controller\Chat@create');
 
     Route::get('attendance/rules', '\app\api\controller\Attendance@rules');
+    Route::get('attendance/my-rule', '\app\api\controller\Attendance@myRule');
+    Route::get('attendance/today-status', '\app\api\controller\Attendance@todayStatus');
+    Route::get('attendance/monthly-stats', '\app\api\controller\Attendance@monthlyStats');
     Route::post('attendance/checkin', '\app\api\controller\Attendance@checkin');
     Route::get('attendance/records', '\app\api\controller\Attendance@records');
     Route::get('location/reverse', '\app\api\controller\Location@reverse');
@@ -116,5 +119,11 @@ Route::group('api', function () {
         Route::post('currencies', '\app\admin\controller\Currency@save');
         Route::put('currencies/:id', '\app\admin\controller\Currency@update');
         Route::delete('currencies/:id', '\app\admin\controller\Currency@delete');
+
+        Route::get('shift-schedules', '\app\admin\controller\ShiftSchedule@index');
+        Route::get('shift-schedules/:id', '\app\admin\controller\ShiftSchedule@read');
+        Route::post('shift-schedules', '\app\admin\controller\ShiftSchedule@save');
+        Route::put('shift-schedules/:id', '\app\admin\controller\ShiftSchedule@update');
+        Route::delete('shift-schedules/:id', '\app\admin\controller\ShiftSchedule@delete');
     });
 });
