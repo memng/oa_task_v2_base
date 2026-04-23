@@ -12,6 +12,7 @@ class Announcement extends ApiController
     public function index()
     {
         $userId = (int)$this->user()['id'];
+        $userDeptId = isset($this->user()['dept_id']) ? (int)$this->user()['dept_id'] : null;
         $category = Request::get('category');
         $keyword = trim((string)Request::get('keyword', ''));
         $onlyUnread = (int)Request::get('only_unread', 0);
@@ -20,6 +21,21 @@ class Announcement extends ApiController
         $query = Db::table('announcements')->alias('a')
             ->leftJoin('announcement_reads ar', 'ar.announcement_id = a.id AND ar.user_id = ' . $userId)
             ->where('a.publish_status', 'published');
+
+        $query->where(function ($q) use ($userDeptId) {
+            $q->whereNotExists(function ($subQ) {
+                $subQ->table('announcement_targets')
+                    ->whereColumn('announcement_id', 'a.id');
+            });
+            if ($userDeptId) {
+                $q->whereOrExists(function ($subQ) use ($userDeptId) {
+                    $subQ->table('announcement_targets')
+                        ->whereColumn('announcement_id', 'a.id')
+                        ->where('dept_id', $userDeptId);
+                });
+            }
+        });
+
         if ($category) {
             $query->where('a.category', $category);
         }
@@ -77,6 +93,19 @@ class Announcement extends ApiController
             'created_by'     => $this->user()['id'],
             'created_at'     => date('Y-m-d H:i:s'),
         ]);
+
+        $deptIds = $data['dept_ids'] ?? [];
+        if (!empty($deptIds) && is_array($deptIds)) {
+            $targetData = [];
+            foreach ($deptIds as $deptId) {
+                $targetData[] = [
+                    'announcement_id' => $id,
+                    'dept_id'         => (int)$deptId,
+                    'role_id'         => null,
+                ];
+            }
+            Db::table('announcement_targets')->insertAll($targetData);
+        }
 
         return $this->success(['id' => $id], '公告已保存', 201);
     }

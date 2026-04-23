@@ -43,6 +43,22 @@
             <el-option label="通用" value="general" />
           </el-select>
         </el-form-item>
+        <el-form-item label="投放范围">
+          <el-select v-model="form.target_type" @change="handleTargetTypeChange">
+            <el-option label="全员" value="all" />
+            <el-option label="指定部门" value="department" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.target_type === 'department'" label="选择部门">
+          <el-select
+            v-model="form.dept_ids"
+            multiple
+            placeholder="请选择部门（可多选）"
+            style="width: 100%"
+          >
+            <el-option v-for="dept in departments" :key="dept.id" :label="dept.name" :value="dept.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="内容">
           <el-input type="textarea" rows="4" v-model="form.content" />
         </el-form-item>
@@ -68,7 +84,7 @@ import { api } from '../api'
 import { sanitizeObject } from '../utils/security'
 
 const list = ref([])
-const form = reactive({ title: '', category: 'general', content: '' })
+const form = reactive({ title: '', category: 'general', target_type: 'all', dept_ids: [], content: '' })
 const notifyForm = reactive({ title: '', content: '', target_type: 'all', dept_id: null })
 const departments = ref([])
 
@@ -82,13 +98,31 @@ const fetchDepartments = async () => {
   departments.value = data.data || []
 }
 
+const handleTargetTypeChange = (val) => {
+  if (val === 'all') {
+    form.dept_ids = []
+  }
+}
+
 const publish = async () => {
   if (!form.title || !form.content) {
     return ElMessage.error('请填写完整')
   }
-  const payload = sanitizeObject({ ...form, publish_status: 'published' }, ['title', 'content'])
+  if (form.target_type === 'department' && form.dept_ids.length === 0) {
+    return ElMessage.error('请至少选择一个部门')
+  }
+  const payload = sanitizeObject({
+    title: form.title,
+    category: form.category,
+    content: form.content,
+    publish_status: 'published'
+  }, ['title', 'content'])
+  if (form.target_type === 'department' && form.dept_ids.length > 0) {
+    payload.dept_ids = form.dept_ids
+  }
   await api.publishAnnouncement(payload)
-  Object.assign(form, { title: '', category: 'general', content: '' })
+  ElMessage.success('公告已发布')
+  Object.assign(form, { title: '', category: 'general', target_type: 'all', dept_ids: [], content: '' })
   fetchAnnouncements()
 }
 
