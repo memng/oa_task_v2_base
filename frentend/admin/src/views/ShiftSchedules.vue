@@ -18,7 +18,7 @@
           @change="fetchList"
           @clear="fetchList"
         >
-          <el-option label="通用班次" :value="null" />
+          <el-option label="通用班次" :value="0" />
           <el-option v-for="dept in departments" :key="dept.id" :label="dept.name" :value="dept.id" />
         </el-select>
         <el-button type="primary" @click="openDialog()">新增班次</el-button>
@@ -250,7 +250,7 @@ const fetchList = async () => {
     if (searchKeyword.value) {
       params.keyword = searchKeyword.value
     }
-    if (searchDeptId.value !== undefined && searchDeptId.value !== '') {
+    if (searchDeptId.value !== undefined && searchDeptId.value !== null && searchDeptId.value !== '') {
       params.dept_id = searchDeptId.value
     }
     const { data } = await api.adminShiftSchedules(params)
