@@ -36,7 +36,18 @@
             </view>
           </view>
           <view v-else class="content">{{ msg.content || '[不支持的消息类型]' }}</view>
-          <view class="meta">{{ msg.sender_name || '' }} · {{ msg.created_at }}</view>
+          <view class="meta">
+            <text v-if="!isMine(msg)">{{ msg.sender_name || '' }} · </text>
+            <text>{{ msg.created_at }}</text>
+            <text v-if="isMine(msg)" class="read-status" @click.stop="handleReadStatusClick(msg)">
+              <text v-if="roomInfo.type === 'direct'" :class="{ read: msg.read_status === 'read' }">
+                {{ msg.read_status === 'read' ? '已读' : '未读' }}
+              </text>
+              <text v-else-if="roomInfo.type === 'group'" class="group-read-status">
+                {{ msg.read_count }}人已读，{{ msg.unread_count }}人未读
+              </text>
+            </text>
+          </view>
         </view>
       </view>
       <view v-if="!messages.length" class="empty">暂无聊天记录，快来打个招呼吧</view>
@@ -63,6 +74,35 @@
       ></textarea>
       <button class="send-btn" size="mini" :loading="sending" :disabled="sending" @click="sendMessage">发送</button>
     </view>
+    
+    <view v-if="readStatusPopup.visible" class="popup-mask" @click="closeReadStatusPopup">
+      <view class="popup-content" @click.stop>
+        <view class="popup-header">
+          <text class="popup-title">{{ readStatusPopup.title }}</text>
+          <text class="popup-close" @click="closeReadStatusPopup">×</text>
+        </view>
+        <scroll-view scroll-y class="popup-body">
+          <view v-if="readStatusPopup.readers.length > 0" class="member-section">
+            <view class="section-title">已读 ({{ readStatusPopup.readers.length }})</view>
+            <view class="member-list">
+              <view v-for="member in readStatusPopup.readers" :key="member.id" class="member-item">
+                <image class="member-avatar" :src="resolveMemberAvatar(member)" mode="aspectFill" />
+                <text class="member-name">{{ member.name }}</text>
+              </view>
+            </view>
+          </view>
+          <view v-if="readStatusPopup.unreaders.length > 0" class="member-section">
+            <view class="section-title">未读 ({{ readStatusPopup.unreaders.length }})</view>
+            <view class="member-list">
+              <view v-for="member in readStatusPopup.unreaders" :key="member.id" class="member-item">
+                <image class="member-avatar" :src="resolveMemberAvatar(member)" mode="aspectFill" />
+                <text class="member-name">{{ member.name }}</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -80,6 +120,12 @@ const inputValue = ref('')
 const sending = ref(false)
 const uploading = ref(false)
 const scrollTarget = ref('')
+const readStatusPopup = ref({
+  visible: false,
+  title: '',
+  readers: [],
+  unreaders: []
+})
 let timer = null
 
 const currentUser = computed(() => store.state.profile || {})
@@ -244,6 +290,31 @@ const handleMessageClick = (msg) => {
   if (msg.message_type === 'file') {
     handleFileClick(msg)
   }
+}
+
+const handleReadStatusClick = async (msg) => {
+  if (!isMine(msg)) return
+  
+  try {
+    const res = await api.chatMessageReaders(roomId.value, msg.id)
+    readStatusPopup.value = {
+      visible: true,
+      title: roomInfo.value.type === 'direct' ? '消息状态' : '消息已读状态',
+      readers: res.readers || [],
+      unreaders: res.unreaders || []
+    }
+  } catch (error) {
+    console.error('获取消息已读状态失败:', error)
+    uni.showToast({ title: '获取消息状态失败', icon: 'none' })
+  }
+}
+
+const closeReadStatusPopup = () => {
+  readStatusPopup.value.visible = false
+}
+
+const resolveMemberAvatar = (member) => {
+  return member.avatar || '/static/icons/avatar.png'
 }
 
 const handleFileClick = (msg) => {
@@ -583,5 +654,95 @@ onUnload(() => {
   text-align: center;
   color: #999;
   margin-top: 160rpx;
+}
+.read-status {
+  margin-left: 16rpx;
+  padding: 4rpx 8rpx;
+  border-radius: 4rpx;
+}
+.read-status .read {
+  color: #52c41a;
+}
+.group-read-status {
+  color: rgba(255, 255, 255, 0.8);
+}
+.popup-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.popup-content {
+  width: 80%;
+  max-height: 70vh;
+  background: #fff;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+.popup-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+}
+.popup-close {
+  font-size: 48rpx;
+  color: #999;
+  line-height: 1;
+}
+.popup-body {
+  max-height: 50vh;
+  padding: 16rpx 32rpx;
+}
+.member-section {
+  margin-bottom: 24rpx;
+}
+.section-title {
+  font-size: 28rpx;
+  color: #666;
+  margin-bottom: 16rpx;
+  padding-left: 8rpx;
+  border-left: 4rpx solid #1677ff;
+}
+.member-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+.member-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 120rpx;
+  padding: 16rpx 8rpx;
+  border-radius: 8rpx;
+  background: #fafafa;
+}
+.member-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  margin-bottom: 8rpx;
+}
+.member-name {
+  font-size: 22rpx;
+  color: #666;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
 }
 </style>

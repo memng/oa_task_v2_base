@@ -146,7 +146,9 @@ class Chat extends ApiController
     public function messages($id)
     {
         $roomId = (int)$id;
-        $member = $this->ensureMembership($roomId, (int)$this->user()['id']);
+        $userId = (int)$this->user()['id'];
+        $member = $this->ensureMembership($roomId, $userId);
+        $roomType = $member['room_type'] ?? 'direct';
         $limit = (int)Request::get('limit', 50);
         if ($limit <= 0) {
             $limit = 50;
@@ -182,6 +184,7 @@ class Chat extends ApiController
             ->where('cm.room_id', $roomId)
             ->field([
                 'cm.user_id',
+                'cm.last_read_message_id',
                 'u.name',
                 'u.avatar_url',
             ])
@@ -194,16 +197,100 @@ class Chat extends ApiController
                 'avatar' => $item['avatar_url'] ?? null,
             ];
         }, $rawMembers);
-        $roomName = $member['room_name'] ?: $this->deriveConversationName($member['room_type'], $memberList, (int)$this->user()['id']);
+
+        $memberReadMap = [];
+        foreach ($rawMembers as $rm) {
+            $memberReadMap[(int)$rm['user_id']] = (int)($rm['last_read_message_id'] ?? 0);
+        }
+
+        foreach ($messages as &$msg) {
+            $msgId = (int)$msg['id'];
+            $senderId = (int)$msg['sender_id'];
+            
+            if ($roomType === 'direct') {
+                $peerReadId = 0;
+                foreach ($memberReadMap as $mId => $readId) {
+                    if ($mId !== $userId) {
+                        $peerReadId = $readId;
+                        break;
+                    }
+                }
+                $msg['read_status'] = $peerReadId >= $msgId ? 'read' : 'unread';
+            } else {
+                $readCount = 0;
+                $unreadCount = 0;
+                foreach ($memberReadMap as $mId => $readId) {
+                    if ($mId === $senderId) {
+                        continue;
+                    }
+                    if ($readId >= $msgId) {
+                        $readCount++;
+                    } else {
+                        $unreadCount++;
+                    }
+                }
+                $msg['read_count'] = $readCount;
+                $msg['unread_count'] = $unreadCount;
+            }
+        }
+        unset($msg);
+
+        $roomName = $member['room_name'] ?: $this->deriveConversationName($roomType, $memberList, $userId);
 
         return $this->success([
             'items' => $messages,
             'room'  => [
                 'id'   => $member['room_id'],
-                'type' => $member['room_type'],
+                'type' => $roomType,
                 'name' => $roomName,
                 'members' => $memberList,
             ],
+        ]);
+    }
+
+    public function messageReaders($roomId, $messageId)
+    {
+        $roomId = (int)$roomId;
+        $messageId = (int)$messageId;
+        $userId = (int)$this->user()['id'];
+        
+        $this->ensureMembership($roomId, $userId);
+
+        $rawMembers = Db::table('chat_members')->alias('cm')
+            ->leftJoin('users u', 'u.id = cm.user_id')
+            ->where('cm.room_id', $roomId)
+            ->field([
+                'cm.user_id',
+                'cm.last_read_message_id',
+                'u.name',
+                'u.avatar_url',
+            ])
+            ->select()
+            ->toArray();
+
+        $readers = [];
+        $unreaders = [];
+        
+        foreach ($rawMembers as $item) {
+            $memberId = (int)$item['user_id'];
+            $lastReadId = (int)($item['last_read_message_id'] ?? 0);
+            
+            $memberInfo = [
+                'id'     => $memberId,
+                'name'   => $item['name'] ?? '成员',
+                'avatar' => $item['avatar_url'] ?? null,
+            ];
+            
+            if ($lastReadId >= $messageId) {
+                $readers[] = $memberInfo;
+            } else {
+                $unreaders[] = $memberInfo;
+            }
+        }
+
+        return $this->success([
+            'readers' => $readers,
+            'unreaders' => $unreaders,
         ]);
     }
 
