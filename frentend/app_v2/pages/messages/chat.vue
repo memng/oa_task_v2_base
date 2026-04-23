@@ -248,34 +248,65 @@ const handleMessageClick = (msg) => {
 
 const downloadFile = (msg) => {
   const url = resolveMediaUrl(msg.storage_path)
-  uni.showLoading({ title: '下载中...' })
-  uni.downloadFile({
-    url: url,
-    success: (res) => {
-      if (res.statusCode === 200) {
-        uni.saveFile({
-          tempFilePath: res.tempFilePath,
-          success: (saveRes) => {
-            uni.hideLoading()
-            uni.showModal({
-              title: '下载成功',
-              content: `文件已保存到: ${saveRes.savedFilePath}`,
-              showCancel: false
-            })
+  const fileName = msg.file_name || 'download'
+  const token = store.state.token
+  
+  uni.showModal({
+    title: '下载文件',
+    content: `确定要下载文件 "${fileName}" 吗？`,
+    success: (modalRes) => {
+      if (modalRes.confirm) {
+        uni.showLoading({ title: '下载中...' })
+        
+        const downloadOptions = {
+          url: url,
+          success: (res) => {
+            if (res.statusCode === 200) {
+              const filePath = res.tempFilePath
+              uni.hideLoading()
+              uni.openDocument({
+                filePath: filePath,
+                showMenu: true,
+                success: () => {
+                  console.log('文件打开成功')
+                },
+                fail: (err) => {
+                  console.error('打开文件失败:', err)
+                  uni.showModal({
+                    title: '下载完成',
+                    content: '文件已下载完成，您可以在文件管理器中查看。\n临时路径: ' + filePath,
+                    showCancel: false
+                  })
+                }
+              })
+            } else {
+              uni.hideLoading()
+              uni.showToast({ 
+                title: '下载失败: HTTP ' + res.statusCode, 
+                icon: 'none',
+                duration: 3000
+              })
+            }
           },
-          fail: () => {
+          fail: (err) => {
             uni.hideLoading()
-            uni.showToast({ title: '保存文件失败', icon: 'none' })
+            console.error('下载失败:', err)
+            uni.showToast({ 
+              title: '下载失败: ' + (err.errMsg || '网络错误'), 
+              icon: 'none',
+              duration: 3000
+            })
           }
-        })
-      } else {
-        uni.hideLoading()
-        uni.showToast({ title: '下载失败', icon: 'none' })
+        }
+        
+        if (token) {
+          downloadOptions.header = {
+            Authorization: `Bearer ${token}`
+          }
+        }
+        
+        uni.downloadFile(downloadOptions)
       }
-    },
-    fail: () => {
-      uni.hideLoading()
-      uni.showToast({ title: '下载失败', icon: 'none' })
     }
   })
 }
