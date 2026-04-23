@@ -23,7 +23,12 @@ class ShiftSchedule extends AdminApiController
         }
         
         if ($deptId !== null && $deptId !== '') {
-            $query->where('attendance_rules.dept_id', (int)$deptId);
+            $deptIdInt = (int)$deptId;
+            if ($deptIdInt === 0) {
+                $query->whereNull('attendance_rules.dept_id');
+            } else {
+                $query->where('attendance_rules.dept_id', $deptIdInt);
+            }
         }
         
         $items = $query->select()->toArray();
