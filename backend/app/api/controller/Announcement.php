@@ -81,30 +81,38 @@ class Announcement extends ApiController
         }
 
         $data = SecurityService::sanitizeArray($data, ['title', 'content']);
-
         $status = $data['publish_status'] ?? 'draft';
-        $id = Db::table('announcements')->insertGetId([
-            'title'          => $data['title'],
-            'content'        => $data['content'],
-            'category'       => $data['category'] ?? 'general',
-            'publish_status' => $status,
-            'allow_comments' => $data['allow_comments'] ?? 0,
-            'published_at'   => $status === 'published' ? date('Y-m-d H:i:s') : null,
-            'created_by'     => $this->user()['id'],
-            'created_at'     => date('Y-m-d H:i:s'),
-        ]);
-
         $deptIds = $data['dept_ids'] ?? [];
-        if (!empty($deptIds) && is_array($deptIds)) {
-            $targetData = [];
-            foreach ($deptIds as $deptId) {
-                $targetData[] = [
-                    'announcement_id' => $id,
-                    'dept_id'         => (int)$deptId,
-                    'role_id'         => null,
-                ];
+
+        Db::startTrans();
+        try {
+            $id = Db::table('announcements')->insertGetId([
+                'title'          => $data['title'],
+                'content'        => $data['content'],
+                'category'       => $data['category'] ?? 'general',
+                'publish_status' => $status,
+                'allow_comments' => $data['allow_comments'] ?? 0,
+                'published_at'   => $status === 'published' ? date('Y-m-d H:i:s') : null,
+                'created_by'     => $this->user()['id'],
+                'created_at'     => date('Y-m-d H:i:s'),
+            ]);
+
+            if (!empty($deptIds) && is_array($deptIds)) {
+                $targetData = [];
+                foreach ($deptIds as $deptId) {
+                    $targetData[] = [
+                        'announcement_id' => $id,
+                        'dept_id'         => (int)$deptId,
+                        'role_id'         => null,
+                    ];
+                }
+                Db::table('announcement_targets')->insertAll($targetData);
             }
-            Db::table('announcement_targets')->insertAll($targetData);
+
+            Db::commit();
+        } catch (\Exception $e) {
+            Db::rollback();
+            $this->errorResponse('保存公告失败：' . $e->getMessage(), 500);
         }
 
         return $this->success(['id' => $id], '公告已保存', 201);

@@ -95,7 +95,7 @@ const fetchAnnouncements = async () => {
 
 const fetchDepartments = async () => {
   const { data } = await api.adminDepartments()
-  departments.value = data.data || []
+  departments.value = data.data.items || []
 }
 
 const handleTargetTypeChange = (val) => {
