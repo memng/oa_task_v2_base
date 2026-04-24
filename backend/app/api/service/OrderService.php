@@ -16,27 +16,39 @@ class OrderService
 
     public function create(array $payload, array $user): array
     {
-        if (empty($payload['pi_number'])) {
-            throw new \InvalidArgumentException('PI 号码不能为空');
-        }
-        if (empty($payload['customer_name'])) {
-            throw new \InvalidArgumentException('客户名称不能为空');
-        }
-        if (empty($payload['products']) || !is_array($payload['products'])) {
-            throw new \InvalidArgumentException('至少需要一个产品');
+        $isDraft = ($payload['status'] ?? '') === 'draft';
+        
+        if (!$isDraft) {
+            if (empty($payload['pi_number']) && empty($payload['pi_numbers'])) {
+                throw new \InvalidArgumentException('PI 号码不能为空');
+            }
+            if (empty($payload['customer_name'])) {
+                throw new \InvalidArgumentException('客户名称不能为空');
+            }
+            if (empty($payload['products']) || !is_array($payload['products'])) {
+                throw new \InvalidArgumentException('至少需要一个产品');
+            }
         }
 
         $now = date('Y-m-d H:i:s');
-        $orderId = Db::transaction(function () use ($payload, $user, $now) {
+        $orderId = Db::transaction(function () use ($payload, $user, $now, $isDraft) {
+            $piNumbers = $payload['pi_numbers'] ?? [];
+            $piNumber = $payload['pi_number'] ?? ($piNumbers[0] ?? '');
+            
             $orderId = Db::table('orders')->insertGetId([
-                'pi_number'          => $payload['pi_number'],
+                'pi_number'          => $piNumber,
+                'pi_numbers'         => !empty($piNumbers) ? json_encode($piNumbers, JSON_UNESCAPED_UNICODE) : null,
                 'customer_id'        => $payload['customer_id'] ?? null,
-                'customer_name'      => $payload['customer_name'],
-                'status'             => 'in_progress',
+                'customer_name'      => $payload['customer_name'] ?? '',
+                'status'             => $isDraft ? 'draft' : 'in_progress',
                 'initiator_id'       => $user['id'],
                 'sales_owner_id'     => $payload['sales_owner_id'] ?? $user['id'],
                 'currency'           => $payload['currency'] ?? 'CNY',
+                'delivery_period_days' => $payload['delivery_period_days'] ?? null,
                 'expected_delivery_at'=> $payload['expected_delivery_at'] ?? null,
+                'sea_freight'        => $payload['sea_freight'] ?? 0,
+                'discount_amount'    => $payload['discount_amount'] ?? 0,
+                'grand_total'        => $payload['grand_total'] ?? 0,
                 'requirement_text'   => $payload['requirement_text'] ?? null,
                 'remark'             => $payload['remark'] ?? null,
                 'attachment_count'   => !empty($payload['attachments']) ? count($payload['attachments']) : 0,
@@ -44,8 +56,13 @@ class OrderService
                 'updated_at'         => $now,
             ]);
 
-            $this->createProducts($orderId, $payload['products']);
-            $this->createInitialTasks($orderId, $payload, $user);
+            if (!empty($payload['products']) && is_array($payload['products'])) {
+                $this->createProducts($orderId, $payload['products']);
+            }
+
+            if (!$isDraft && !empty($payload['products']) && is_array($payload['products'])) {
+                $this->createInitialTasks($orderId, $payload, $user);
+            }
 
             if (!empty($payload['attachments'])) {
                 $this->syncDocuments($orderId, $payload['attachments'], $user['id']);
@@ -57,17 +74,92 @@ class OrderService
         return $this->fetchDetail($orderId, $user);
     }
 
+    public function updateDraft(int $orderId, array $payload, array $user): array
+    {
+        $order = Db::table('orders')->where('id', $orderId)->find();
+        if (!$order) {
+            throw new \RuntimeException('订单不存在');
+        }
+        if ($order['status'] !== 'draft') {
+            throw new \RuntimeException('只能编辑草稿状态的订单');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $isSubmit = ($payload['status'] ?? '') === 'in_progress';
+
+        Db::transaction(function () use ($orderId, $payload, $user, $now, $isSubmit) {
+            $piNumbers = $payload['pi_numbers'] ?? [];
+            $existingPiNumbers = json_decode($order['pi_numbers'] ?? '[]', true) ?: [];
+            if (!empty($payload['pi_numbers_add'])) {
+                $piNumbers = array_merge($existingPiNumbers, $payload['pi_numbers_add']);
+            }
+            $piNumber = $payload['pi_number'] ?? ($order['pi_number'] ?? ($piNumbers[0] ?? ''));
+
+            $update = [
+                'pi_number'          => $piNumber,
+                'customer_name'      => $payload['customer_name'] ?? $order['customer_name'],
+                'currency'           => $payload['currency'] ?? $order['currency'],
+                'delivery_period_days' => $payload['delivery_period_days'] ?? $order['delivery_period_days'],
+                'expected_delivery_at'=> $payload['expected_delivery_at'] ?? $order['expected_delivery_at'],
+                'sea_freight'        => $payload['sea_freight'] ?? $order['sea_freight'],
+                'discount_amount'    => $payload['discount_amount'] ?? $order['discount_amount'],
+                'grand_total'        => $payload['grand_total'] ?? $order['grand_total'],
+                'remark'             => $payload['remark'] ?? $order['remark'],
+                'updated_at'         => $now,
+            ];
+
+            if (!empty($piNumbers)) {
+                $update['pi_numbers'] = json_encode($piNumbers, JSON_UNESCAPED_UNICODE);
+            }
+
+            if ($isSubmit) {
+                if (empty($piNumber) && empty($piNumbers)) {
+                    throw new \InvalidArgumentException('PI 号码不能为空');
+                }
+                if (empty($update['customer_name'])) {
+                    throw new \InvalidArgumentException('客户名称不能为空');
+                }
+                if (empty($payload['products']) || !is_array($payload['products'])) {
+                    throw new \InvalidArgumentException('至少需要一个产品');
+                }
+                $update['status'] = 'in_progress';
+            }
+
+            Db::table('orders')->where('id', $orderId)->update($update);
+
+            if (!empty($payload['products']) && is_array($payload['products'])) {
+                Db::table('order_products')->where('order_id', $orderId)->delete();
+                $this->createProducts($orderId, $payload['products']);
+            }
+
+            if ($isSubmit && !empty($payload['products']) && is_array($payload['products'])) {
+                $this->createInitialTasks($orderId, $payload, $user);
+            }
+
+            if (!empty($payload['attachments'])) {
+                Db::table('order_documents')->where('order_id', $orderId)->delete();
+                $this->syncDocuments($orderId, $payload['attachments'], $user['id']);
+            }
+        });
+
+        return $this->fetchDetail($orderId, $user);
+    }
+
     protected function createProducts(int $orderId, array $products): void
     {
         $rows = [];
         foreach ($products as $product) {
             $rows[] = [
                 'order_id'      => $orderId,
-                'product_name'  => $product['product_name'],
+                'product_name'  => $product['product_name'] ?? '',
                 'model'         => $product['model'] ?? null,
                 'voltage'       => $product['voltage'] ?? null,
+                'power'         => $product['power'] ?? null,
+                'processing_length' => $product['processing_length'] ?? null,
+                'dimensions'    => $product['dimensions'] ?? null,
                 'quantity'      => $product['quantity'] ?? 1,
                 'unit_price'    => $product['unit_price'] ?? 0,
+                'total_price'   => $product['total_price'] ?? null,
                 'currency'      => $product['currency'] ?? 'CNY',
                 'requirements'  => $product['requirements'] ?? null,
                 'notes'         => $product['notes'] ?? null,
@@ -227,6 +319,13 @@ class OrderService
         if (!$order) {
             throw new \RuntimeException('订单不存在');
         }
+
+        if (!empty($order['pi_numbers'])) {
+            $order['pi_numbers'] = json_decode($order['pi_numbers'], true) ?: [];
+        } else {
+            $order['pi_numbers'] = $order['pi_number'] ? [$order['pi_number']] : [];
+        }
+
         $products = Db::table('order_products')->where('order_id', $orderId)->select()->toArray();
         $taskRows = Db::table('tasks')->alias('t')
             ->leftJoin('orders o', 'o.id = t.order_id')

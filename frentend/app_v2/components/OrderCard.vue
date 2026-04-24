@@ -56,6 +56,7 @@ const piLabel = computed(() => {
 .status {
   font-size: 24rpx;
 }
+.status.draft { color: #faad14; }
 .status.in_progress { color: #1677ff; }
 .status.completed { color: #52c41a; }
 .status.cancelled { color: #999; }

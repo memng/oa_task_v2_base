@@ -100,6 +100,11 @@ class Order extends ApiController
             $documents = $documentsByOrder[$orderId] ?? [];
             $item['document_summary'] = $this->buildDocumentSummary($documents, $item['status'] ?? '');
             $item['product_name'] = $productNames[$orderId] ?? null;
+            if (!empty($item['pi_numbers'])) {
+                $item['pi_numbers'] = json_decode($item['pi_numbers'], true) ?: [];
+            } else {
+                $item['pi_numbers'] = $item['pi_number'] ? [$item['pi_number']] : [];
+            }
         }
         unset($item);
 
@@ -122,7 +127,9 @@ class Order extends ApiController
             $this->errorResponse($e->getMessage(), 422);
         }
 
-        return $this->success($detail, '订单已创建', 201);
+        $isDraft = ($data['status'] ?? '') === 'draft';
+        $message = $isDraft ? '草稿已保存' : '订单已创建';
+        return $this->success($detail, $message, 201);
     }
 
     public function read($id)
@@ -140,6 +147,24 @@ class Order extends ApiController
     public function update($id)
     {
         $data = $this->requestData();
+        $orderId = (int)$id;
+
+        $order = Db::table('orders')->where('id', $orderId)->find();
+        if (!$order) {
+            $this->errorResponse('订单不存在', 404);
+        }
+
+        if ($order['status'] === 'draft') {
+            try {
+                $detail = $this->service->updateDraft($orderId, $data, $this->user());
+            } catch (\Throwable $e) {
+                $this->errorResponse($e->getMessage(), 422);
+            }
+            $isSubmit = ($data['status'] ?? '') === 'in_progress';
+            $message = $isSubmit ? '订单已提交' : '草稿已保存';
+            return $this->success($detail, $message);
+        }
+
         $update = [
             'customer_name'      => $data['customer_name'] ?? null,
             'status'             => $data['status'] ?? null,
