@@ -87,7 +87,7 @@ class OrderService
         $now = date('Y-m-d H:i:s');
         $isSubmit = ($payload['status'] ?? '') === 'in_progress';
 
-        Db::transaction(function () use ($orderId, $payload, $user, $now, $isSubmit) {
+        Db::transaction(function () use ($orderId, $payload, $user, $now, $isSubmit, $order) {
             $piNumbers = $payload['pi_numbers'] ?? [];
             $existingPiNumbers = json_decode($order['pi_numbers'] ?? '[]', true) ?: [];
             if (!empty($payload['pi_numbers_add'])) {
@@ -149,6 +149,7 @@ class OrderService
     {
         $rows = [];
         foreach ($products as $product) {
+            $assigneeId = isset($product['assignee_id']) ? (int)$product['assignee_id'] : null;
             $rows[] = [
                 'order_id'      => $orderId,
                 'product_name'  => $product['product_name'] ?? '',
@@ -161,6 +162,7 @@ class OrderService
                 'unit_price'    => $product['unit_price'] ?? 0,
                 'total_price'   => $product['total_price'] ?? null,
                 'currency'      => $product['currency'] ?? 'CNY',
+                'assignee_id'   => $assigneeId ?: null,
                 'requirements'  => $product['requirements'] ?? null,
                 'notes'         => $product['notes'] ?? null,
             ];
