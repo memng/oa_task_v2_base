@@ -134,6 +134,7 @@ const currentOrderId = ref(null)
 const profile = computed(() => store.state.profile || {})
 const canCreateTask = computed(() => {
   if (!detail.value?.order || !profile.value?.id) return false
+  if (detail.value.order.status !== 'in_progress') return false
   const deptType = profile.value.dept && profile.value.dept.type
   if (deptType === 'operation' || deptType === 'finance') return true
   return (
@@ -144,7 +145,12 @@ const canCreateTask = computed(() => {
 const isDraft = computed(() => detail.value?.order?.status === 'draft')
 const canEditOrder = computed(() => {
   if (!detail.value?.order || !profile.value?.id) return false
-  return canCreateTask.value
+  const deptType = profile.value.dept && profile.value.dept.type
+  if (deptType === 'operation' || deptType === 'finance') return true
+  return (
+    detail.value.order.initiator_id === profile.value.id ||
+    detail.value.order.sales_owner_id === profile.value.id
+  )
 })
 const statusMap = {
   draft: '草稿',
