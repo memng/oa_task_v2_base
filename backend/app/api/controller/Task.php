@@ -136,8 +136,35 @@ class Task extends ApiController
         if (empty($data['title']) || empty($data['type'])) {
             $this->errorResponse('任务标题或类型不能为空');
         }
+
+        $user = $this->user();
+        $orderId = isset($data['order_id']) ? (int)$data['order_id'] : null;
+
+        if ($orderId > 0) {
+            $order = Db::table('orders')->where('id', $orderId)->find();
+            if (!$order) {
+                $this->errorResponse('订单不存在', 404);
+            }
+
+            if ($order['status'] !== 'in_progress') {
+                $statusLabels = [
+                    'draft'     => '草稿',
+                    'completed' => '已完成',
+                    'cancelled' => '已取消',
+                ];
+                $statusLabel = $statusLabels[$order['status']] ?? $order['status'];
+                $this->errorResponse("仅允许进行中的订单创建任务，当前订单状态为「{$statusLabel}」", 400);
+            }
+
+            $isCreator = (int)$order['initiator_id'] === (int)$user['id'];
+            $isAdmin = \user_belongs_to_admin_dept($user);
+            if (!$isCreator && !$isAdmin) {
+                $this->errorResponse('仅订单创建人和管理员可以创建该订单的关联任务', 403);
+            }
+        }
+
         $payload = [
-            'order_id'        => $data['order_id'] ?? null,
+            'order_id'        => $orderId ?: null,
             'order_product_id'=> $data['order_product_id'] ?? null,
             'type'            => $data['type'],
             'title'           => $data['title'],
@@ -147,7 +174,7 @@ class Task extends ApiController
             'due_at'          => $data['due_at'] ?? null,
             'need_audit'      => $data['need_audit'] ?? 0,
             'attachments'     => $data['attachments'] ?? [],
-            'created_by'      => $this->user()['id'],
+            'created_by'      => $user['id'],
             'payload'         => $data['payload'] ?? null,
         ];
         $taskId = $this->taskService->createTask($payload, $data['extra'] ?? []);
