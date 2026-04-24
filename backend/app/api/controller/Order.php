@@ -152,6 +152,11 @@ class Order extends ApiController
         }
 
         if ($order['status'] === 'draft') {
+            $user = $this->user();
+            $isCreator = (int)$order['initiator_id'] === (int)$user['id'];
+            if (!$isCreator) {
+                $this->errorResponse('只有订单创建人可以编辑草稿订单', 403);
+            }
             try {
                 $detail = $this->service->updateDraft($orderId, $data, $this->user());
             } catch (\Throwable $e) {
@@ -160,6 +165,13 @@ class Order extends ApiController
             $isSubmit = ($data['status'] ?? '') === 'in_progress';
             $message = $isSubmit ? '订单已提交' : '草稿已保存';
             return $this->success($detail, $message);
+        }
+
+        $user = $this->user();
+        $isCreator = (int)$order['initiator_id'] === (int)$user['id'];
+        $isAdmin = \user_belongs_to_admin_dept($user);
+        if (!$isCreator && !$isAdmin) {
+            $this->errorResponse('只有订单创建人或管理员可以编辑订单', 403);
         }
 
         $update = [
@@ -268,6 +280,20 @@ class Order extends ApiController
         }
         if ($order['status'] === 'cancelled') {
             $this->errorResponse('订单已经被取消', 400);
+        }
+
+        $user = $this->user();
+        $isCreator = (int)$order['initiator_id'] === (int)$user['id'];
+        $isAdmin = \user_belongs_to_admin_dept($user);
+
+        if ($order['status'] === 'draft') {
+            if (!$isCreator) {
+                $this->errorResponse('只有订单创建人可以取消草稿订单', 403);
+            }
+        } else {
+            if (!$isCreator && !$isAdmin) {
+                $this->errorResponse('只有订单创建人或管理员可以取消订单', 403);
+            }
         }
 
         Db::transaction(function () use ($orderId) {
