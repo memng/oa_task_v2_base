@@ -7,7 +7,13 @@
       </picker>
     </view>
     <scroll-view scroll-y class="list">
-      <order-card v-for="item in orders" :key="item.id" :order="item" @click="openDetail(item)" />
+      <order-card 
+        v-for="item in orders" 
+        :key="item.id" 
+        :order="item" 
+        @click="openDetail(item)"
+        @cancel="handleCancelOrder(item)"
+      />
       <view v-if="!orders.length" class="empty">暂无订单</view>
     </scroll-view>
   </view>
@@ -25,7 +31,8 @@ const statusOptions = [
   { label: '全部', value: '' },
   { label: '进行中', value: 'in_progress' },
   { label: '已完成', value: 'completed' },
-  { label: '草稿', value: 'draft' }
+  { label: '草稿', value: 'draft' },
+  { label: '已取消', value: 'cancelled' }
 ]
 const currentStatus = ref(statusOptions[0])
 
@@ -57,6 +64,25 @@ const openDetail = (order) => {
   } else {
     uni.navigateTo({ url: `/pages/order/detail?id=${orderId}` })
   }
+}
+
+const handleCancelOrder = (order) => {
+  uni.showModal({
+    title: '确认取消',
+    content: '确定要取消该订单吗？取消后该订单下的所有未完成任务将被取消。',
+    confirmColor: '#ff4d4f',
+    success: async (res) => {
+      if (res.confirm) {
+        try {
+          await api.cancelOrder(order.id)
+          uni.showToast({ title: '订单已取消', icon: 'success' })
+          fetchOrders()
+        } catch (error) {
+          console.error('取消订单失败:', error)
+        }
+      }
+    }
+  })
 }
 
 onLoad((options) => {

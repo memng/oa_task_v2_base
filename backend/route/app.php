@@ -29,6 +29,7 @@ Route::group('api', function () {
     Route::post('reimburse', '\app\api\controller\Reimburse@save');
 
     Route::get('orders/:id/progress', '\app\api\controller\Order@progress');
+    Route::post('orders/:id/cancel', '\app\api\controller\Order@cancel');
     Route::post('orders/:id/costs', '\app\api\controller\Order@addCost');
     Route::post('orders/:id/documents', '\app\api\controller\Order@addDocument');
     Route::get('orders/:id', '\app\api\controller\Order@read');
