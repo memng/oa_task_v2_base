@@ -24,6 +24,10 @@ const props = defineProps({
   order: {
     type: Object,
     required: true
+  },
+  showCancelBtn: {
+    type: Boolean,
+    default: null
   }
 })
 const emit = defineEmits(['click', 'cancel'])
@@ -42,6 +46,9 @@ const piLabel = computed(() => {
   return props.order.pi_number
 })
 const showCancelButton = computed(() => {
+  if (props.showCancelBtn !== null) {
+    return props.showCancelBtn
+  }
   const status = props.order.status
   return status === 'draft' || status === 'in_progress'
 })
