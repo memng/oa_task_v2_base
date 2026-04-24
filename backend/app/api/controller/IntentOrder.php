@@ -61,6 +61,11 @@ class IntentOrder extends ApiController
         'won',
     ];
 
+    protected const LEGACY_STATUS_MAP = [
+        'pending' => 'new',
+        'done' => 'won',
+    ];
+
     public function index()
     {
         $query = Db::table('intent_orders');
@@ -175,7 +180,8 @@ class IntentOrder extends ApiController
 
         $availableTransitions = $this->getAvailableTransitions($item['status']);
 
-        $stageOrder = array_search($item['status'], self::STAGE_ORDER);
+        $normalizedStatus = $this->normalizeStatus($item['status']);
+        $stageOrder = array_search($normalizedStatus, self::STAGE_ORDER);
         $progress = $stageOrder !== false ? round(($stageOrder / (count(self::STAGE_ORDER) - 1)) * 100) : 0;
 
         return $this->success([
@@ -233,10 +239,11 @@ class IntentOrder extends ApiController
         }
 
         $availableTransitions = $this->getAvailableTransitions($item['status']);
+        $normalizedStatus = $this->normalizeStatus($item['status']);
 
         return $this->success([
             'current_status' => $item['status'],
-            'current_status_label' => self::STAGES[$item['status']]['label'] ?? $item['status'],
+            'current_status_label' => self::STAGES[$normalizedStatus]['label'] ?? $item['status'],
             'available_transitions' => $availableTransitions,
         ]);
     }
@@ -248,9 +255,23 @@ class IntentOrder extends ApiController
         ]);
     }
 
+    protected function normalizeStatus(?string $status): ?string
+    {
+        if ($status === null) {
+            return null;
+        }
+        return self::LEGACY_STATUS_MAP[$status] ?? $status;
+    }
+
+    protected function isBlank(?string $value): bool
+    {
+        return $value === null || trim($value) === '';
+    }
+
     protected function validateTransition(string $fromStatus, string $toStatus, string $reason): array
     {
-        $fromStage = self::STAGES[$fromStatus] ?? null;
+        $normalizedFromStatus = $this->normalizeStatus($fromStatus);
+        $fromStage = self::STAGES[$normalizedFromStatus] ?? null;
         $toStage = self::STAGES[$toStatus] ?? null;
 
         if (!$fromStage || !$toStage) {
@@ -262,13 +283,13 @@ class IntentOrder extends ApiController
         }
 
         if ($toStatus === 'lost') {
-            if (empty($reason)) {
+            if ($this->isBlank($reason)) {
                 return ['valid' => false, 'message' => '失败关闭必须填写原因'];
             }
             return ['valid' => true, 'type' => 'lost'];
         }
 
-        $fromOrder = array_search($fromStatus, self::STAGE_ORDER);
+        $fromOrder = array_search($normalizedFromStatus, self::STAGE_ORDER);
         $toOrder = array_search($toStatus, self::STAGE_ORDER);
 
         if ($fromOrder === false || $toOrder === false) {
@@ -280,7 +301,7 @@ class IntentOrder extends ApiController
         }
 
         if ($toOrder === $fromOrder - 1) {
-            if (empty($reason)) {
+            if ($this->isBlank($reason)) {
                 return ['valid' => false, 'message' => '退回上一阶段必须填写原因'];
             }
             return ['valid' => true, 'type' => 'backward'];
@@ -299,12 +320,13 @@ class IntentOrder extends ApiController
 
     protected function getAvailableTransitions(string $currentStatus): array
     {
-        $currentStage = self::STAGES[$currentStatus] ?? null;
+        $normalizedStatus = $this->normalizeStatus($currentStatus);
+        $currentStage = self::STAGES[$normalizedStatus] ?? null;
         if (!$currentStage || $currentStage['is_final']) {
             return [];
         }
 
-        $currentOrder = array_search($currentStatus, self::STAGE_ORDER);
+        $currentOrder = array_search($normalizedStatus, self::STAGE_ORDER);
         $transitions = [];
 
         if ($currentOrder !== false && $currentOrder < count(self::STAGE_ORDER) - 1) {
