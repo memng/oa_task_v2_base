@@ -96,6 +96,16 @@ import { api, request } from '../../utils/request'
 
 const list = ref([])
 
+const legacyStatusMap = {
+  pending: 'new',
+  done: 'won'
+}
+
+const normalizeStatus = (status) => {
+  if (!status) return status
+  return legacyStatusMap[status] || status
+}
+
 const stageLabels = {
   new: '新建',
   initial_review: '初评',
@@ -104,7 +114,9 @@ const stageLabels = {
   business_negotiation: '商务谈判',
   contract_review: '合同评审',
   won: '成交',
-  lost: '失败关闭'
+  lost: '失败关闭',
+  pending: '新建',
+  done: '成交'
 }
 
 const tabs = [
@@ -160,6 +172,7 @@ const getStatusLabel = (status) => {
 }
 
 const getStatusClass = (status) => {
+  const normalized = normalizeStatus(status)
   const classMap = {
     new: 'status-new',
     initial_review: 'status-review',
@@ -170,11 +183,12 @@ const getStatusClass = (status) => {
     won: 'status-won',
     lost: 'status-lost'
   }
-  return classMap[status] || 'status-default'
+  return classMap[normalized] || 'status-default'
 }
 
 const isFinalStatus = (status) => {
-  return status === 'won' || status === 'lost'
+  const normalized = normalizeStatus(status)
+  return normalized === 'won' || normalized === 'lost'
 }
 
 const getTransitionTypeLabel = (type) => {
