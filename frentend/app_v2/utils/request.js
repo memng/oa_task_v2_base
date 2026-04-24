@@ -259,5 +259,14 @@ export const api = {
   },
   intentOrderDetail(id) {
     return request({ url: `/intent-orders/${id}` })
+  },
+  intentOrderStages() {
+    return request({ url: '/intent-orders/stages' })
+  },
+  intentOrderTransition(id, payload) {
+    return request({ url: `/intent-orders/${id}/transition`, method: 'POST', data: payload })
+  },
+  intentOrderAvailableTransitions(id) {
+    return request({ url: `/intent-orders/${id}/available-transitions` })
   }
 }

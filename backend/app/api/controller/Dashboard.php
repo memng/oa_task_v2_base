@@ -25,7 +25,7 @@ class Dashboard extends ApiController
             ->toArray();
 
         $intentOrders = Db::table('intent_orders')
-            ->where('status', 'pending')
+            ->whereNotIn('status', ['won', 'lost'])
             ->order('created_at', 'desc')
             ->limit(5)
             ->select()
