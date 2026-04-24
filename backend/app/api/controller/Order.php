@@ -54,10 +54,7 @@ class Order extends ApiController
         if ($endDate = Request::get('end_date')) {
             $query->where('o.created_at', '<=', "{$endDate} 23:59:59");
         }
-        if (!\user_belongs_to_admin_dept($user)) {
-            $userId = (int)$user['id'];
-            $query->where('o.initiator_id', $userId);
-        }
+
 
         $countQuery = clone $query;
         $total = $countQuery->count();
@@ -258,16 +255,43 @@ class Order extends ApiController
         ]);
     }
 
+    public function cancel($id)
+    {
+        $orderId = (int)$id;
+        $order = Db::table('orders')->where('id', $orderId)->find();
+        if (!$order) {
+            $this->errorResponse('订单不存在', 404);
+        }
+
+        if ($order['status'] === 'completed') {
+            $this->errorResponse('已完成的订单不能取消', 400);
+        }
+        if ($order['status'] === 'cancelled') {
+            $this->errorResponse('订单已经被取消', 400);
+        }
+
+        Db::transaction(function () use ($orderId) {
+            Db::table('orders')
+                ->where('id', $orderId)
+                ->update([
+                    'status'     => 'cancelled',
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ]);
+
+            Db::table('tasks')
+                ->where('order_id', $orderId)
+                ->whereNotIn('status', ['completed', 'cancelled'])
+                ->update([
+                    'status'     => 'cancelled',
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ]);
+        });
+
+        return $this->success([], '订单已取消');
+    }
+
     protected function assertOrderPermission(array $order): void
     {
-        if (\user_belongs_to_admin_dept($this->user())) {
-            return;
-        }
-        $userId = (int)$this->user()['id'];
-        if ((int)$order['initiator_id'] === $userId) {
-            return;
-        }
-        $this->errorResponse('暂无权限查看该订单', 403);
     }
 
     protected function documentTypes(): array

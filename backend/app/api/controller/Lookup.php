@@ -15,7 +15,7 @@ class Lookup extends ApiController
                 'procurement', 'nameplate', 'machine_data', 'acceptance',
                 'packaging', 'shipment', 'inspection', 'temporary', 'document',
             ],
-            'task_status' => ['pending', 'in_progress', 'waiting_audit', 'rejected', 'completed'],
+            'task_status' => ['pending', 'in_progress', 'waiting_audit', 'rejected', 'completed', 'cancelled'],
             'order_status'=> ['draft', 'in_progress', 'completed', 'cancelled'],
             'cost_scope'  => ['domestic', 'international', 'finance'],
             'cost_categories' => [

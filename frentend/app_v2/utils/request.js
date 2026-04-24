@@ -194,6 +194,9 @@ export const api = {
   orderProgress(id) {
     return request({ url: `/orders/${id}/progress` })
   },
+  cancelOrder(id) {
+    return request({ url: `/orders/${id}/cancel`, method: 'POST' })
+  },
   createOrder(payload) {
     return request({ url: '/orders', method: 'POST', data: payload })
   },
