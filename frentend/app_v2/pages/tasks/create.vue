@@ -247,7 +247,7 @@ const fetchOrders = async () => {
   }
   orderLoading.value = true
   try {
-    const res = await api.orderList({ page_size: 100 })
+    const res = await api.orderList({ page_size: 100, status: 'in_progress' })
     const items = res.items || []
     orderList.value = items.map((item) => ({
       id: item.id != null ? String(item.id) : '',
