@@ -11,6 +11,7 @@
         v-for="item in orders" 
         :key="item.id" 
         :order="item" 
+        :show-cancel-btn="canCancelOrder(item)"
         @click="openDetail(item)"
         @cancel="handleCancelOrder(item)"
       />
@@ -20,10 +21,11 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { api } from '../../utils/request'
 import OrderCard from '../../components/OrderCard.vue'
+import store from '../../store'
 
 const orders = ref([])
 const keyword = ref('')
@@ -35,6 +37,30 @@ const statusOptions = [
   { label: '已取消', value: 'cancelled' }
 ]
 const currentStatus = ref(statusOptions[0])
+
+const currentUser = computed(() => store.state.profile || {})
+const currentUserId = computed(() => currentUser.value?.id)
+const isAdminDept = computed(() => {
+  const deptType = currentUser.value?.dept?.type
+  return deptType === 'operation' || deptType === 'finance'
+})
+
+const canCancelOrder = (order) => {
+  if (!order) return false
+  const isCreator = String(order.initiator_id) === String(currentUserId.value)
+  if (order.status === 'draft') {
+    return isCreator
+  }
+  if (order.status === 'in_progress') {
+    return isCreator || isAdminDept.value
+  }
+  return false
+}
+
+const canEditDraft = (order) => {
+  if (!order || order.status !== 'draft') return false
+  return String(order.initiator_id) === String(currentUserId.value)
+}
 
 const fetchOrders = async () => {
   const res = await api.orderList({ keyword: keyword.value, status: currentStatus.value.value })
@@ -60,7 +86,11 @@ const openDetail = (order) => {
   }
   const orderId = encodeURIComponent(String(order.id))
   if (order.status === 'draft') {
-    uni.navigateTo({ url: `/pages/order/create?orderId=${orderId}&mode=edit` })
+    if (canEditDraft(order)) {
+      uni.navigateTo({ url: `/pages/order/create?orderId=${orderId}&mode=edit` })
+    } else {
+      uni.showToast({ title: '只有订单创建人可以编辑草稿', icon: 'none' })
+    }
   } else {
     uni.navigateTo({ url: `/pages/order/detail?id=${orderId}` })
   }
