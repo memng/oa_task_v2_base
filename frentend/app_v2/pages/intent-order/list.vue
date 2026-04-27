@@ -86,12 +86,83 @@
         </view>
       </view>
     </view>
+
+    <view v-if="showEditModal" class="modal-overlay" @click="closeEditModal">
+      <view class="modal-content edit-modal" @click.stop>
+        <view class="modal-title">编辑意向订单</view>
+        <view class="modal-body">
+          <view class="form-item">
+            <text class="form-label">客户名称 <span class="required">*</span></text>
+            <input
+              v-model="editForm.customer_name"
+              placeholder="请输入客户名称"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">产品名称 <span class="required">*</span></text>
+            <input
+              v-model="editForm.product_name"
+              placeholder="请输入产品名称"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">型号 <span class="required">*</span></text>
+            <input
+              v-model="editForm.model"
+              placeholder="请输入型号"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">电压</text>
+            <input
+              v-model="editForm.voltage"
+              placeholder="请输入电压"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">数量</text>
+            <input
+              v-model="editForm.quantity"
+              type="number"
+              placeholder="请输入数量"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">预计成交日期</text>
+            <input
+              v-model="editForm.expected_close_date"
+              placeholder="请输入预计成交日期"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">客户需求</text>
+            <textarea
+              v-model="editForm.customer_requirements"
+              placeholder="请输入客户需求"
+              class="form-textarea"
+            ></textarea>
+          </view>
+        </view>
+        <view class="modal-footer">
+          <button class="btn-cancel" @click="closeEditModal">取消</button>
+          <button class="btn-confirm primary" @click="submitEdit" :disabled="isSubmitting">
+            {{ isSubmitting ? '提交中...' : '保存' }}
+          </button>
+        </view>
+      </view>
+    </view>
   </scroll-view>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onUnload } from '@dcloudio/uni-app'
 import { api, request } from '../../utils/request'
 
 const list = ref([])
@@ -160,6 +231,19 @@ const availableTransitions = ref([])
 const selectedTransition = ref('')
 const selectedTransitionNeedReason = ref(false)
 const transitionReason = ref('')
+
+const showEditModal = ref(false)
+const isSubmitting = ref(false)
+const editForm = ref({
+  customer_name: '',
+  product_name: '',
+  model: '',
+  voltage: '',
+  quantity: 1,
+  expected_close_date: '',
+  customer_requirements: ''
+})
+const currentEditItem = ref(null)
 
 const canConfirmTransition = computed(() => {
   if (!selectedTransition.value) return false
@@ -260,8 +344,67 @@ const create = async () => {
   fetchList()
 }
 
-const edit = () => {
-  uni.showToast({ title: '编辑功能待接入', icon: 'none' })
+const edit = (item) => {
+  currentEditItem.value = item
+  editForm.value = {
+    customer_name: item.customer_name || '',
+    product_name: item.product_name || '',
+    model: item.model || '',
+    voltage: item.voltage || '',
+    quantity: item.quantity || 1,
+    expected_close_date: item.expected_close_date || '',
+    customer_requirements: item.customer_requirements || ''
+  }
+  showEditModal.value = true
+}
+
+const closeEditModal = () => {
+  showEditModal.value = false
+  isSubmitting.value = false
+  currentEditItem.value = null
+}
+
+const validateEditForm = () => {
+  if (!editForm.value.customer_name || !editForm.value.customer_name.trim()) {
+    uni.showToast({ title: '请输入客户名称', icon: 'none' })
+    return false
+  }
+  if (!editForm.value.product_name || !editForm.value.product_name.trim()) {
+    uni.showToast({ title: '请输入产品名称', icon: 'none' })
+    return false
+  }
+  if (!editForm.value.model || !editForm.value.model.trim()) {
+    uni.showToast({ title: '请输入型号', icon: 'none' })
+    return false
+  }
+  return true
+}
+
+const submitEdit = async () => {
+  if (!validateEditForm()) return
+  if (!currentEditItem.value) return
+
+  isSubmitting.value = true
+  try {
+    const payload = {
+      customer_name: editForm.value.customer_name.trim(),
+      product_name: editForm.value.product_name.trim(),
+      model: editForm.value.model.trim(),
+      voltage: editForm.value.voltage || null,
+      quantity: parseInt(editForm.value.quantity) || 1,
+      expected_close_date: editForm.value.expected_close_date || null,
+      customer_requirements: editForm.value.customer_requirements || null
+    }
+
+    await api.updateIntentOrder(currentEditItem.value.id, payload)
+    uni.showToast({ title: '保存成功', icon: 'success' })
+    closeEditModal()
+    fetchList()
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 const changeStatus = async (item) => {
@@ -322,7 +465,17 @@ const openDetail = (item) => {
   uni.navigateTo({ url: `/pages/intent-order/detail?id=${item.id}` })
 }
 
-onShow(fetchList)
+onShow(() => {
+  fetchList()
+})
+
+onUnload(() => {
+  uni.$off('intentOrderUpdated')
+})
+
+uni.$on('intentOrderUpdated', () => {
+  fetchList()
+})
 </script>
 
 <style scoped lang="scss">
@@ -577,5 +730,47 @@ onShow(fetchList)
 }
 .btn-confirm[disabled] {
   opacity: 0.5;
+}
+.edit-modal {
+  max-height: 85vh;
+  overflow: hidden;
+}
+.edit-modal .modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.form-item {
+  margin-bottom: 24rpx;
+}
+.form-item:last-child {
+  margin-bottom: 0;
+}
+.form-label {
+  display: block;
+  font-size: 28rpx;
+  color: #333;
+  margin-bottom: 12rpx;
+}
+.required {
+  color: #ff4d4f;
+}
+.form-input {
+  width: 100%;
+  padding: 20rpx 16rpx;
+  background: #f7f8fa;
+  border: 2rpx solid #e8e8e8;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+.form-textarea {
+  width: 100%;
+  min-height: 180rpx;
+  padding: 16rpx;
+  background: #f7f8fa;
+  border: 2rpx solid #e8e8e8;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  box-sizing: border-box;
 }
 </style>
