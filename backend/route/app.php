@@ -45,12 +45,12 @@ Route::group('api', function () {
     Route::post('tasks', '\app\api\controller\Task@save');
 
     Route::get('intent-orders/stages', '\app\api\controller\IntentOrder@stages');
-    Route::get('intent-orders', '\app\api\controller\IntentOrder@index');
-    Route::post('intent-orders', '\app\api\controller\IntentOrder@save');
     Route::put('intent-orders/:id', '\app\api\controller\IntentOrder@update');
     Route::post('intent-orders/:id/transition', '\app\api\controller\IntentOrder@transition');
     Route::get('intent-orders/:id/available-transitions', '\app\api\controller\IntentOrder@availableTransitions');
     Route::get('intent-orders/:id', '\app\api\controller\IntentOrder@read');
+    Route::get('intent-orders', '\app\api\controller\IntentOrder@index');
+    Route::post('intent-orders', '\app\api\controller\IntentOrder@save');
 
     Route::rule('announcements/:id/read', '\app\api\controller\Announcement@markRead', 'GET|POST');
     Route::get('announcements', '\app\api\controller\Announcement@index');
