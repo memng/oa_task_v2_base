@@ -109,6 +109,12 @@
       </view>
     </view>
   </scroll-view>
+  <view class="loading" v-else-if="loading">
+    <text>加载中...</text>
+  </view>
+  <view class="empty" v-else>
+    <text>暂无意向订单信息</text>
+  </view>
 </template>
 
 <script setup>
@@ -120,6 +126,7 @@ const detail = ref(null)
 const transitions = ref([])
 const availableTransitions = ref([])
 const progress = ref(0)
+const loading = ref(true)
 
 const showTransitionModal = ref(false)
 const selectedOption = ref(null)
@@ -192,11 +199,25 @@ const getTransitionDotClass = (type) => {
 }
 
 const fetchDetail = async (id) => {
-  const res = await api.intentOrderDetail(id)
-  detail.value = res.item
-  transitions.value = res.transitions || []
-  availableTransitions.value = res.available_transitions || []
-  progress.value = res.progress || 0
+  loading.value = true
+  try {
+    const res = await api.intentOrderDetail(id)
+    if (!res || !res.item) {
+      throw new Error('意向订单不存在')
+    }
+    detail.value = res.item
+    transitions.value = res.transitions || []
+    availableTransitions.value = res.available_transitions || []
+    progress.value = res.progress || 0
+  } catch (error) {
+    detail.value = null
+    transitions.value = []
+    availableTransitions.value = []
+    progress.value = 0
+    uni.showToast({ title: (error && error.message) || '获取意向订单失败', icon: 'none' })
+  } finally {
+    loading.value = false
+  }
 }
 
 const closeTransitionModal = () => {
@@ -534,5 +555,19 @@ onLoad(async (query) => {
 }
 .btn-confirm[disabled] {
   opacity: 0.5;
+}
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120rpx 0;
+  color: #999;
+  font-size: 28rpx;
+}
+.empty {
+  padding: 120rpx 0;
+  text-align: center;
+  color: #999;
+  font-size: 28rpx;
 }
 </style>
