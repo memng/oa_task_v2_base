@@ -377,7 +377,30 @@ const validateEditForm = () => {
     uni.showToast({ title: '请输入型号', icon: 'none' })
     return false
   }
+  if (editForm.value.expected_close_date && editForm.value.expected_close_date.trim()) {
+    const dateStr = editForm.value.expected_close_date.trim()
+    if (!isValidDate(dateStr)) {
+      uni.showToast({ title: '预计成交日期格式不正确', icon: 'none' })
+      return false
+    }
+  }
   return true
+}
+
+const isValidDate = (dateStr) => {
+  if (!dateStr) return true
+  
+  const datePattern1 = /^\d{4}-\d{2}-\d{2}$/
+  const datePattern2 = /^\d{4}\/\d{2}\/\d{2}$/
+  const dateTimePattern = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$/
+  
+  if (datePattern1.test(dateStr) || datePattern2.test(dateStr) || dateTimePattern.test(dateStr)) {
+    const normalizedDate = dateStr.replace(/\//g, '-').split(' ')[0]
+    const date = new Date(normalizedDate)
+    return date instanceof Date && !isNaN(date)
+  }
+  
+  return false
 }
 
 const submitEdit = async () => {
@@ -756,7 +779,9 @@ uni.$on('intentOrderUpdated', () => {
 }
 .form-input {
   width: 100%;
-  padding: 20rpx 16rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 20rpx;
   background: #f7f8fa;
   border: 2rpx solid #e8e8e8;
   border-radius: 12rpx;

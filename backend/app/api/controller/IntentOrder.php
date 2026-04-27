@@ -151,12 +151,52 @@ class IntentOrder extends ApiController
             $this->errorResponse('状态变更请使用专门的流转接口 POST /intent-orders/:id/transition');
         }
 
+        if (isset($data['expected_close_date']) && !empty($data['expected_close_date'])) {
+            $dateStr = trim($data['expected_close_date']);
+            if (!$this->isValidDate($dateStr)) {
+                $this->errorResponse('预计成交日期格式不正确，请使用 YYYY-MM-DD 格式');
+            }
+            $data['expected_close_date'] = $this->normalizeDate($dateStr);
+        }
+
         $update = array_intersect_key($data, array_flip($allowedFields));
         if ($update) {
             $update['updated_at'] = date('Y-m-d H:i:s');
             Db::table('intent_orders')->where('id', $id)->update($update);
         }
         return $this->success([], '更新成功');
+    }
+
+    protected function isValidDate($dateStr): bool
+    {
+        if (empty($dateStr)) {
+            return true;
+        }
+        
+        $dateStr = trim($dateStr);
+        
+        $pattern1 = '/^\d{4}-\d{2}-\d{2}$/';
+        $pattern2 = '/^\d{4}\/\d{2}\/\d{2}$/';
+        $pattern3 = '/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$/';
+        
+        if (preg_match($pattern1, $dateStr) || preg_match($pattern2, $dateStr) || preg_match($pattern3, $dateStr)) {
+            $normalizedDate = str_replace('/', '-', explode(' ', $dateStr)[0]);
+            $date = \DateTime::createFromFormat('Y-m-d', $normalizedDate);
+            return $date && $date->format('Y-m-d') === $normalizedDate;
+        }
+        
+        return false;
+    }
+
+    protected function normalizeDate($dateStr): ?string
+    {
+        if (empty($dateStr)) {
+            return null;
+        }
+        
+        $dateStr = trim($dateStr);
+        $normalizedDate = str_replace('/', '-', explode(' ', $dateStr)[0]);
+        return $normalizedDate;
     }
 
     public function read($id)
