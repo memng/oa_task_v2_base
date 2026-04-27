@@ -385,13 +385,38 @@ const isValidDate = (dateStr) => {
   const datePattern2 = /^\d{4}\/\d{2}\/\d{2}$/
   const dateTimePattern = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$/
   
-  if (datePattern1.test(dateStr) || datePattern2.test(dateStr) || dateTimePattern.test(dateStr)) {
-    const normalizedDate = dateStr.replace(/\//g, '-').split(' ')[0]
-    const date = new Date(normalizedDate)
-    return date instanceof Date && !isNaN(date)
+  if (!(datePattern1.test(dateStr) || datePattern2.test(dateStr) || dateTimePattern.test(dateStr))) {
+    return false
   }
   
-  return false
+  const normalizedDate = dateStr.replace(/\//g, '-').split(' ')[0]
+  const parts = normalizedDate.split('-')
+  const year = parseInt(parts[0], 10)
+  const month = parseInt(parts[1], 10)
+  const day = parseInt(parts[2], 10)
+  
+  if (month < 1 || month > 12) {
+    return false
+  }
+  
+  const daysInMonth = getDaysInMonth(year, month)
+  if (day < 1 || day > daysInMonth) {
+    return false
+  }
+  
+  return true
+}
+
+const getDaysInMonth = (year, month) => {
+  const daysPerMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  
+  if (month === 2) {
+    if ((year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0)) {
+      return 29
+    }
+  }
+  
+  return daysPerMonth[month - 1]
 }
 
 const submitEdit = async () => {
