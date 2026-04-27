@@ -7,7 +7,7 @@
 #
 # 主机: 127.0.0.1 (MySQL 5.7.30-0ubuntu0.18.04.1)
 # 数据库: oa_task_v2
-# 生成时间: 2026-04-21 14:58:41 +0000
+# 生成时间: 2026-04-27 18:10:07 +0000
 # ************************************************************
 
 
@@ -72,6 +72,8 @@ CREATE TABLE `announcement_targets` (
   `role_id` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_announcement_targets_announcement` (`announcement_id`),
+  KEY `idx_announcement_targets_dept` (`dept_id`),
+  KEY `idx_announcement_targets_announcement_dept` (`announcement_id`,`dept_id`),
   CONSTRAINT `fk_announcement_targets_announcement` FOREIGN KEY (`announcement_id`) REFERENCES `announcements` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -131,12 +133,15 @@ CREATE TABLE `attendance_records` (
   `photo_id` bigint(20) unsigned DEFAULT NULL,
   `status` enum('normal','late','early','absent') DEFAULT 'normal',
   `checked_at` datetime NOT NULL,
+  `check_date` date DEFAULT NULL COMMENT '打卡日期',
   `remark` varchar(255) DEFAULT NULL,
   `location_text` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_attendance_records_user` (`user_id`),
   KEY `fk_attendance_records_rule` (`rule_id`),
   KEY `fk_attendance_records_photo` (`photo_id`),
+  KEY `idx_attendance_records_check_date` (`check_date`),
+  KEY `idx_attendance_records_user_date` (`user_id`,`check_date`),
   CONSTRAINT `fk_attendance_records_photo` FOREIGN KEY (`photo_id`) REFERENCES `media_assets` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_attendance_records_rule` FOREIGN KEY (`rule_id`) REFERENCES `attendance_rules` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_attendance_records_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
@@ -156,6 +161,8 @@ CREATE TABLE `attendance_rules` (
   `workday` varchar(32) DEFAULT 'weekday',
   `start_time` time NOT NULL,
   `end_time` time NOT NULL,
+  `saturday_off` tinyint(1) NOT NULL DEFAULT '1' COMMENT '周六是否休息：0-上班，1-休息',
+  `sunday_off` tinyint(1) NOT NULL DEFAULT '1' COMMENT '周日是否休息：0-上班，1-休息',
   `check_in_type` enum('wifi','gps','both') DEFAULT 'gps',
   `wifi_ssid` varchar(64) DEFAULT NULL,
   `wifi_bssid` varchar(64) DEFAULT NULL,
@@ -164,7 +171,12 @@ CREATE TABLE `attendance_rules` (
   `gps_radius` int(11) DEFAULT '200',
   `allow_late_minutes` int(11) DEFAULT '0',
   `allow_early_minutes` int(11) DEFAULT '0',
+  `late_threshold_minutes` int(11) NOT NULL DEFAULT '30' COMMENT '迟到阈值（分钟），超过此时间算严重迟到',
+  `early_threshold_minutes` int(11) NOT NULL DEFAULT '30' COMMENT '早退阈值（分钟），提前此时间下班算严重早退',
+  `absent_after_minutes` int(11) NOT NULL DEFAULT '60' COMMENT '上班后多少分钟未打卡算旷工',
   `status` tinyint(1) DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `fk_attendance_rules_dept` (`dept_id`),
   CONSTRAINT `fk_attendance_rules_dept` FOREIGN KEY (`dept_id`) REFERENCES `departments` (`id`) ON DELETE SET NULL
@@ -228,6 +240,8 @@ CREATE TABLE `chat_messages` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_chat_messages_room` (`room_id`),
+  KEY `idx_chat_messages_media` (`media_id`),
+  CONSTRAINT `fk_chat_messages_media` FOREIGN KEY (`media_id`) REFERENCES `media_assets` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_chat_messages_room` FOREIGN KEY (`room_id`) REFERENCES `chat_rooms` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -370,6 +384,29 @@ CREATE TABLE `expense_reports` (
 
 
 
+# 转储表 intent_order_transitions
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `intent_order_transitions`;
+
+CREATE TABLE `intent_order_transitions` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `intent_order_id` bigint(20) unsigned NOT NULL COMMENT '意向单ID',
+  `from_status` varchar(32) DEFAULT NULL COMMENT '原状态（新建时为NULL）',
+  `to_status` varchar(32) NOT NULL COMMENT '新状态',
+  `transition_type` enum('forward','backward','lost') NOT NULL COMMENT '流转类型：推进/回退/失败关闭',
+  `reason` text COMMENT '流转原因（回退和失败关闭时必填）',
+  `operator_id` bigint(20) unsigned NOT NULL COMMENT '操作人ID',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_intent_order_transitions_order` (`intent_order_id`),
+  KEY `idx_intent_order_transitions_operator` (`operator_id`),
+  CONSTRAINT `fk_intent_order_transitions_operator` FOREIGN KEY (`operator_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_intent_order_transitions_order` FOREIGN KEY (`intent_order_id`) REFERENCES `intent_orders` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='意向单阶段流转历史表';
+
+
+
 # 转储表 intent_orders
 # ------------------------------------------------------------
 
@@ -384,7 +421,7 @@ CREATE TABLE `intent_orders` (
   `voltage` varchar(64) DEFAULT NULL,
   `quantity` int(11) NOT NULL DEFAULT '1',
   `customer_requirements` text,
-  `status` enum('pending','won','lost') DEFAULT 'pending',
+  `status` enum('new','initial_review','requirement_confirm','proposal','business_negotiation','contract_review','won','lost') DEFAULT 'new' COMMENT '状态',
   `expected_close_date` date DEFAULT NULL,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -417,6 +454,28 @@ CREATE TABLE `leave_requests` (
   KEY `fk_leave_requests_user` (`user_id`),
   CONSTRAINT `fk_leave_requests_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+
+# 转储表 login_failure_records
+# ------------------------------------------------------------
+
+DROP TABLE IF EXISTS `login_failure_records`;
+
+CREATE TABLE `login_failure_records` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `mobile` varchar(20) NOT NULL COMMENT '手机号',
+  `user_id` bigint(20) unsigned DEFAULT NULL COMMENT '用户ID（如果用户存在）',
+  `failure_count` int(11) NOT NULL DEFAULT '0' COMMENT '连续失败次数',
+  `last_failure_at` timestamp NULL DEFAULT NULL COMMENT '最后一次失败时间',
+  `locked_until` timestamp NULL DEFAULT NULL COMMENT '锁定到何时',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mobile` (`mobile`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_locked_until` (`locked_until`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录失败记录表';
 
 
 
@@ -548,13 +607,20 @@ CREATE TABLE `order_products` (
   `product_name` varchar(128) NOT NULL,
   `model` varchar(128) DEFAULT NULL,
   `voltage` varchar(64) DEFAULT NULL,
+  `power` varchar(64) DEFAULT NULL COMMENT '机器功率',
+  `processing_length` varchar(128) DEFAULT NULL COMMENT '加工长度',
+  `dimensions` varchar(128) DEFAULT NULL COMMENT '外形尺寸',
   `quantity` int(11) NOT NULL DEFAULT '1',
   `unit_price` decimal(12,2) DEFAULT '0.00',
+  `total_price` decimal(12,2) DEFAULT NULL COMMENT '产品总价',
   `currency` varchar(16) DEFAULT 'CNY',
+  `assignee_id` bigint(20) unsigned DEFAULT NULL COMMENT '采购人ID',
   `requirements` text,
   `notes` text,
   PRIMARY KEY (`id`),
   KEY `idx_order_products_order` (`order_id`),
+  KEY `idx_order_products_assignee` (`assignee_id`),
+  CONSTRAINT `fk_order_products_assignee` FOREIGN KEY (`assignee_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_order_products_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -568,13 +634,18 @@ DROP TABLE IF EXISTS `orders`;
 CREATE TABLE `orders` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `pi_number` varchar(64) NOT NULL,
+  `pi_numbers` json DEFAULT NULL COMMENT '多个PI号JSON数组',
   `customer_id` bigint(20) unsigned DEFAULT NULL,
   `customer_name` varchar(128) NOT NULL,
   `status` enum('draft','in_progress','completed','cancelled') DEFAULT 'draft',
   `initiator_id` bigint(20) unsigned NOT NULL,
   `sales_owner_id` bigint(20) unsigned DEFAULT NULL,
   `currency` varchar(16) DEFAULT 'CNY',
+  `delivery_period_days` int(11) DEFAULT NULL COMMENT '交货期天数',
   `expected_delivery_at` date DEFAULT NULL,
+  `sea_freight` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '海运费',
+  `discount_amount` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '折扣金额',
+  `grand_total` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '订单总价',
   `requirement_text` text,
   `remark` text,
   `attachment_count` int(11) DEFAULT '0',
