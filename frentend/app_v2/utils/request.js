@@ -268,5 +268,8 @@ export const api = {
   },
   intentOrderAvailableTransitions(id) {
     return request({ url: `/intent-orders/${id}/available-transitions` })
+  },
+  updateIntentOrder(id, payload) {
+    return request({ url: `/intent-orders/${id}`, method: 'PUT', data: payload })
   }
 }

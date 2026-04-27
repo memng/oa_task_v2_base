@@ -54,6 +54,13 @@
       </view>
     </view>
 
+    <view class="card">
+      <view class="section-title">操作</view>
+      <view class="action-buttons">
+        <button class="action-btn edit-btn" @click="openEditModal">编辑</button>
+      </view>
+    </view>
+
     <view class="card" v-if="availableTransitions.length > 0">
       <view class="section-title">可执行操作</view>
       <view class="transition-options">
@@ -108,6 +115,77 @@
         </view>
       </view>
     </view>
+
+    <view v-if="showEditModal" class="modal-overlay" @click="closeEditModal">
+      <view class="modal-content edit-modal" @click.stop>
+        <view class="modal-title">编辑意向订单</view>
+        <view class="modal-body">
+          <view class="form-item">
+            <text class="form-label">客户名称 <span class="required">*</span></text>
+            <input
+              v-model="editForm.customer_name"
+              placeholder="请输入客户名称"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">产品名称 <span class="required">*</span></text>
+            <input
+              v-model="editForm.product_name"
+              placeholder="请输入产品名称"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">型号 <span class="required">*</span></text>
+            <input
+              v-model="editForm.model"
+              placeholder="请输入型号"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">电压</text>
+            <input
+              v-model="editForm.voltage"
+              placeholder="请输入电压"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">数量</text>
+            <input
+              v-model="editForm.quantity"
+              type="number"
+              placeholder="请输入数量"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">预计成交日期</text>
+            <input
+              v-model="editForm.expected_close_date"
+              placeholder="请输入预计成交日期"
+              class="form-input"
+            />
+          </view>
+          <view class="form-item">
+            <text class="form-label">客户需求</text>
+            <textarea
+              v-model="editForm.customer_requirements"
+              placeholder="请输入客户需求"
+              class="form-textarea"
+            ></textarea>
+          </view>
+        </view>
+        <view class="modal-footer">
+          <button class="btn-cancel" @click="closeEditModal">取消</button>
+          <button class="btn-confirm primary" @click="submitEdit" :disabled="isSubmitting">
+            {{ isSubmitting ? '提交中...' : '保存' }}
+          </button>
+        </view>
+      </view>
+    </view>
   </scroll-view>
   <view class="loading" v-else-if="loading">
     <text>加载中...</text>
@@ -131,6 +209,18 @@ const loading = ref(true)
 const showTransitionModal = ref(false)
 const selectedOption = ref(null)
 const transitionReason = ref('')
+
+const showEditModal = ref(false)
+const isSubmitting = ref(false)
+const editForm = ref({
+  customer_name: '',
+  product_name: '',
+  model: '',
+  voltage: '',
+  quantity: 1,
+  expected_close_date: '',
+  customer_requirements: ''
+})
 
 const canConfirm = computed(() => {
   if (!selectedOption.value) return false
@@ -243,6 +333,69 @@ const confirmTransition = async () => {
     fetchDetail(detail.value.id)
   } catch (e) {
     console.error(e)
+  }
+}
+
+const openEditModal = () => {
+  if (!detail.value) return
+  editForm.value = {
+    customer_name: detail.value.customer_name || '',
+    product_name: detail.value.product_name || '',
+    model: detail.value.model || '',
+    voltage: detail.value.voltage || '',
+    quantity: detail.value.quantity || 1,
+    expected_close_date: detail.value.expected_close_date || '',
+    customer_requirements: detail.value.customer_requirements || ''
+  }
+  showEditModal.value = true
+}
+
+const closeEditModal = () => {
+  showEditModal.value = false
+  isSubmitting.value = false
+}
+
+const validateEditForm = () => {
+  if (!editForm.value.customer_name || !editForm.value.customer_name.trim()) {
+    uni.showToast({ title: '请输入客户名称', icon: 'none' })
+    return false
+  }
+  if (!editForm.value.product_name || !editForm.value.product_name.trim()) {
+    uni.showToast({ title: '请输入产品名称', icon: 'none' })
+    return false
+  }
+  if (!editForm.value.model || !editForm.value.model.trim()) {
+    uni.showToast({ title: '请输入型号', icon: 'none' })
+    return false
+  }
+  return true
+}
+
+const submitEdit = async () => {
+  if (!validateEditForm()) return
+  if (!detail.value) return
+
+  isSubmitting.value = true
+  try {
+    const payload = {
+      customer_name: editForm.value.customer_name.trim(),
+      product_name: editForm.value.product_name.trim(),
+      model: editForm.value.model.trim(),
+      voltage: editForm.value.voltage || null,
+      quantity: parseInt(editForm.value.quantity) || 1,
+      expected_close_date: editForm.value.expected_close_date || null,
+      customer_requirements: editForm.value.customer_requirements || null
+    }
+
+    await api.updateIntentOrder(detail.value.id, payload)
+    uni.showToast({ title: '保存成功', icon: 'success' })
+    closeEditModal()
+    fetchDetail(detail.value.id)
+    uni.$emit('intentOrderUpdated')
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isSubmitting.value = false
   }
 }
 
@@ -569,5 +722,59 @@ onLoad(async (query) => {
   text-align: center;
   color: #999;
   font-size: 28rpx;
+}
+.action-buttons {
+  display: flex;
+  gap: 16rpx;
+}
+.action-btn {
+  flex: 1;
+  padding: 20rpx;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  border: none;
+}
+.edit-btn {
+  background: #1677ff;
+  color: #fff;
+}
+.edit-modal {
+  max-height: 85vh;
+  overflow: hidden;
+}
+.edit-modal .modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.form-item {
+  margin-bottom: 24rpx;
+}
+.form-item:last-child {
+  margin-bottom: 0;
+}
+.form-label {
+  display: block;
+  font-size: 28rpx;
+  color: #333;
+  margin-bottom: 12rpx;
+}
+.form-input {
+  width: 100%;
+  padding: 20rpx 16rpx;
+  background: #f7f8fa;
+  border: 2rpx solid #e8e8e8;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+.form-textarea {
+  width: 100%;
+  min-height: 180rpx;
+  padding: 16rpx;
+  background: #f7f8fa;
+  border: 2rpx solid #e8e8e8;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  box-sizing: border-box;
 }
 </style>
