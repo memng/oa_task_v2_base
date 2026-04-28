@@ -6,6 +6,7 @@
         <el-option label="审批中" value="pending"></el-option>
         <el-option label="已通过" value="approved"></el-option>
         <el-option label="已驳回" value="rejected"></el-option>
+        <el-option label="已撤回" value="cancelled"></el-option>
       </el-select>
       <el-button type="primary" @click="fetchList">刷新</el-button>
     </div>
@@ -56,12 +57,14 @@ const updateStatus = async (id, nextStatus) => {
 const statusText = (value) => {
   if (value === 'approved') return '已通过'
   if (value === 'rejected') return '已驳回'
+  if (value === 'cancelled') return '已撤回'
   return '审批中'
 }
 
 const statusType = (value) => {
   if (value === 'approved') return 'success'
   if (value === 'rejected') return 'danger'
+  if (value === 'cancelled') return 'info'
   return 'warning'
 }
 

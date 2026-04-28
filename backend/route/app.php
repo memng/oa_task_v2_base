@@ -84,6 +84,7 @@ Route::group('api', function () {
     Route::get('leave', '\app\api\controller\Leave@index');
     Route::post('leave', '\app\api\controller\Leave@save');
     Route::post('leave/:id/approve', '\app\api\controller\Leave@approve');
+    Route::post('leave/:id/cancel', '\app\api\controller\Leave@cancel');
 
     Route::get('voltages', '\app\api\controller\Voltage@index');
     Route::get('currencies', '\app\api\controller\Currency@index');
