@@ -213,8 +213,7 @@ class Leave extends ApiController
                 ->where('id', $id)
                 ->where('status', 'pending')
                 ->update([
-                    'status'     => 'cancelled',
-                    'updated_at' => date('Y-m-d H:i:s'),
+                    'status' => 'cancelled',
                 ]);
 
             if ($updated !== 1) {
