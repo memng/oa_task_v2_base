@@ -3,6 +3,7 @@
 namespace app\admin\controller;
 
 use app\common\controller\AdminApiController;
+use app\common\service\NotificationService;
 use think\facade\Db;
 use think\facade\Request;
 
@@ -37,6 +38,19 @@ class Reimburse extends AdminApiController
         if (!in_array($status, ['approved', 'rejected'], true)) {
             $this->errorResponse('状态非法');
         }
+        
+        $oldStatus = $report['status'] ?? '';
+        if ($oldStatus !== 'pending') {
+            $report = Db::table('expense_reports')->alias('e')
+                ->leftJoin('users u', 'u.id = e.user_id')
+                ->field('e.*, u.name as user_name, u.mobile as user_mobile')
+                ->where('e.id', $id)
+                ->find();
+            return $this->success([
+                'report' => $this->formatReport($report),
+            ], '状态已更新');
+        }
+        
         $update = [
             'status'      => $status,
             'approver_id' => $this->currentUser['id'] ?? null,
@@ -46,6 +60,17 @@ class Reimburse extends AdminApiController
             $update['remark'] = $payload['remark'];
         }
         Db::table('expense_reports')->where('id', $id)->update($update);
+        
+        $notificationService = new NotificationService();
+        $applicantId = (int)$report['user_id'];
+        $reason = $payload['remark'] ?? null;
+        
+        if ($status === 'approved') {
+            $notificationService->sendReimburseApproved($applicantId, $report);
+        } else {
+            $notificationService->sendReimburseRejected($applicantId, $report, $reason);
+        }
+        
         $report = Db::table('expense_reports')->alias('e')
             ->leftJoin('users u', 'u.id = e.user_id')
             ->field('e.*, u.name as user_name, u.mobile as user_mobile')

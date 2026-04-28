@@ -3,6 +3,7 @@
 namespace app\api\controller;
 
 use app\common\controller\ApiController;
+use app\common\service\NotificationService;
 use think\facade\Db;
 use think\facade\Request;
 
@@ -175,6 +176,16 @@ class Leave extends ApiController
 
             $action = $status === 'approved' ? 'approve' : 'reject';
             $this->logAudit($id, $action, 'pending', $status, $userId, $data['reason'] ?? null);
+
+            $notificationService = new NotificationService();
+            $applicantId = (int)$leaveRequest['user_id'];
+            $reason = $data['reason'] ?? null;
+            
+            if ($status === 'approved') {
+                $notificationService->sendLeaveApproved($applicantId, $leaveRequest);
+            } else {
+                $notificationService->sendLeaveRejected($applicantId, $leaveRequest, $reason);
+            }
 
             Db::commit();
             return $this->success([], '审批完成');
