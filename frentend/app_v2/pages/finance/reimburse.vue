@@ -357,14 +357,15 @@ const fetchList = async (reset = true) => {
     }
 
     const res = await api.reimburseList(params)
+    const items = res.items || []
     
     if (reset) {
-      list.value = res.items || []
+      list.value = items
     } else {
-      list.value = [...list.value, ...(res.items || [])]
+      list.value = [...list.value, ...items]
     }
 
-    hasMore.value = page.value < res.totalPages
+    hasMore.value = items.length >= pageSize
     page.value++
   } catch (error) {
     console.error('获取报销列表失败:', error)
@@ -375,7 +376,12 @@ const fetchList = async (reset = true) => {
 }
 
 const loadMore = () => {
-  if (loadingMore.value || !hasMore.value) return
+  console.log('scrolltolower triggered', { loadingMore: loadingMore.value, hasMore: hasMore.value, page: page.value })
+  if (loadingMore.value || !hasMore.value) {
+    console.log('loadMore skipped', { loadingMore: loadingMore.value, hasMore: hasMore.value })
+    return
+  }
+  console.log('loading more, page:', page.value)
   fetchList(false)
 }
 
@@ -465,8 +471,10 @@ onShow(() => {
 
 <style scoped lang="scss">
 .page {
+  height: 100vh;
   padding: 32rpx;
   background: #f6f7fb;
+  box-sizing: border-box;
 }
 .card {
   background: #fff;
