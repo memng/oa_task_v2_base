@@ -108,7 +108,6 @@ class Reimburse extends ApiController
             return [];
         }
         
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $existingMedia = Db::table('media_assets')
             ->whereIn('id', $ids)
             ->column('id');
