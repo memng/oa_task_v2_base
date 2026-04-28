@@ -58,24 +58,62 @@ class Reimburse extends AdminApiController
 
     protected function formatReport(array $report): array
     {
-        $receipt = null;
-        if (!empty($report['receipt_media_id'])) {
-            $receipt = $this->fetchMedia((int)$report['receipt_media_id']);
+        $mediaIds = $this->extractReceiptMediaIds($report);
+        $receipts = [];
+        $firstReceipt = null;
+        
+        foreach ($mediaIds as $mediaId) {
+            $media = $this->fetchMedia($mediaId);
+            if ($media) {
+                $receipts[] = $media;
+                if ($firstReceipt === null) {
+                    $firstReceipt = $media;
+                }
+            }
         }
+        
         return [
-            'id'          => (int)$report['id'],
-            'user_id'     => (int)$report['user_id'],
-            'user_name'   => $report['user_name'] ?? null,
-            'user_mobile' => $report['user_mobile'] ?? null,
-            'type'        => $report['type'],
-            'amount'      => (float)$report['amount'],
-            'remark'      => $report['remark'],
-            'status'      => $report['status'],
-            'created_at'  => $report['created_at'],
-            'approved_at' => $report['approved_at'],
-            'receipt_url' => $receipt['url'] ?? null,
-            'receipt_name'=> $receipt['file_name'] ?? null,
+            'id'                => (int)$report['id'],
+            'user_id'           => (int)$report['user_id'],
+            'user_name'         => $report['user_name'] ?? null,
+            'user_mobile'       => $report['user_mobile'] ?? null,
+            'type'              => $report['type'],
+            'amount'            => (float)$report['amount'],
+            'remark'            => $report['remark'],
+            'status'            => $report['status'],
+            'created_at'        => $report['created_at'],
+            'approved_at'       => $report['approved_at'],
+            'receipt_url'       => $firstReceipt['url'] ?? null,
+            'receipt_name'      => $firstReceipt['file_name'] ?? null,
+            'receipt_media_ids' => $mediaIds,
+            'receipts'          => $receipts,
         ];
+    }
+
+    protected function extractReceiptMediaIds(array $report): array
+    {
+        $ids = [];
+        
+        if (!empty($report['receipt_media_ids'])) {
+            $parsed = json_decode($report['receipt_media_ids'], true);
+            if (is_array($parsed)) {
+                foreach ($parsed as $id) {
+                    $intId = (int)$id;
+                    if ($intId > 0 && !in_array($intId, $ids, true)) {
+                        $ids[] = $intId;
+                    }
+                }
+            }
+        }
+        
+        if (empty($ids) && !empty($report['receipt_media_id'])) {
+            $intId = (int)$report['receipt_media_id'];
+            if ($intId > 0) {
+                $ids[] = $intId;
+            }
+        }
+        
+        return $ids;
     }
 
     protected function fetchMedia(int $mediaId): ?array

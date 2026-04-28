@@ -60,14 +60,19 @@ class Reimburse extends ApiController
         if ($amount <= 0) {
             $this->errorResponse('请输入正确的金额');
         }
+        
+        $receiptMediaIds = $this->parseReceiptMediaIds($payload);
+        $firstMediaId = !empty($receiptMediaIds) ? $receiptMediaIds[0] : null;
+        
         $data = [
-            'user_id'          => $this->user()['id'],
-            'type'             => $type,
-            'amount'           => round($amount, 2),
-            'remark'           => $payload['remark'] ?? null,
-            'receipt_media_id' => !empty($payload['receipt_media_id']) ? (int)$payload['receipt_media_id'] : null,
-            'status'           => 'pending',
-            'created_at'       => date('Y-m-d H:i:s'),
+            'user_id'           => $this->user()['id'],
+            'type'              => $type,
+            'amount'            => round($amount, 2),
+            'remark'            => $payload['remark'] ?? null,
+            'receipt_media_id'  => $firstMediaId,
+            'receipt_media_ids' => !empty($receiptMediaIds) ? json_encode($receiptMediaIds) : null,
+            'status'            => 'pending',
+            'created_at'        => date('Y-m-d H:i:s'),
         ];
         $id = Db::table('expense_reports')->insertGetId($data);
         $report = Db::table('expense_reports')->find($id);
@@ -76,25 +81,88 @@ class Reimburse extends ApiController
         ], '报销申请已提交', 201);
     }
 
+    protected function parseReceiptMediaIds(array $payload): array
+    {
+        $ids = [];
+        
+        if (!empty($payload['receipt_media_ids']) && is_array($payload['receipt_media_ids'])) {
+            foreach ($payload['receipt_media_ids'] as $id) {
+                $intId = (int)$id;
+                if ($intId > 0 && !in_array($intId, $ids, true)) {
+                    $ids[] = $intId;
+                }
+            }
+        }
+        
+        if (empty($ids) && !empty($payload['receipt_media_id'])) {
+            $intId = (int)$payload['receipt_media_id'];
+            if ($intId > 0) {
+                $ids[] = $intId;
+            }
+        }
+        
+        return $ids;
+    }
+
     protected function formatReport(array $report): array
     {
-        $receipt = null;
-        if (!empty($report['receipt_media_id'])) {
-            $receipt = $this->fetchMedia((int)$report['receipt_media_id']);
+        $mediaIds = $this->extractReceiptMediaIds($report);
+        $receipts = [];
+        $firstReceipt = null;
+        
+        foreach ($mediaIds as $mediaId) {
+            $media = $this->fetchMedia($mediaId);
+            if ($media) {
+                $receipts[] = $media;
+                if ($firstReceipt === null) {
+                    $firstReceipt = $media;
+                }
+            }
         }
+        
+        $firstMediaId = !empty($mediaIds) ? $mediaIds[0] : null;
+        
         return [
-            'id'               => (int)$report['id'],
-            'type'             => $report['type'],
-            'amount'           => (float)$report['amount'],
-            'remark'           => $report['remark'],
-            'status'           => $report['status'],
-            'approver_id'      => $report['approver_id'] ? (int)$report['approver_id'] : null,
-            'approved_at'      => $report['approved_at'],
-            'created_at'       => $report['created_at'],
-            'receipt_media_id' => $report['receipt_media_id'] ? (int)$report['receipt_media_id'] : null,
-            'receipt_url'      => $receipt['url'] ?? null,
-            'receipt_name'     => $receipt['file_name'] ?? null,
+            'id'                 => (int)$report['id'],
+            'type'               => $report['type'],
+            'amount'             => (float)$report['amount'],
+            'remark'             => $report['remark'],
+            'status'             => $report['status'],
+            'approver_id'        => $report['approver_id'] ? (int)$report['approver_id'] : null,
+            'approved_at'        => $report['approved_at'],
+            'created_at'         => $report['created_at'],
+            'receipt_media_id'   => $firstMediaId,
+            'receipt_media_ids'  => $mediaIds,
+            'receipt_url'        => $firstReceipt['url'] ?? null,
+            'receipt_name'       => $firstReceipt['file_name'] ?? null,
+            'receipts'           => $receipts,
         ];
+    }
+
+    protected function extractReceiptMediaIds(array $report): array
+    {
+        $ids = [];
+        
+        if (!empty($report['receipt_media_ids'])) {
+            $parsed = json_decode($report['receipt_media_ids'], true);
+            if (is_array($parsed)) {
+                foreach ($parsed as $id) {
+                    $intId = (int)$id;
+                    if ($intId > 0 && !in_array($intId, $ids, true)) {
+                        $ids[] = $intId;
+                    }
+                }
+            }
+        }
+        
+        if (empty($ids) && !empty($report['receipt_media_id'])) {
+            $intId = (int)$report['receipt_media_id'];
+            if ($intId > 0) {
+                $ids[] = $intId;
+            }
+        }
+        
+        return $ids;
     }
 
     protected function fetchMedia(int $mediaId): ?array
