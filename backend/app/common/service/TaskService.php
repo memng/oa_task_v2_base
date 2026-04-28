@@ -6,6 +6,13 @@ use think\facade\Db;
 
 class TaskService
 {
+    protected NotificationService $notificationService;
+
+    public function __construct()
+    {
+        $this->notificationService = new NotificationService();
+    }
+
     public function createTask(array $data, array $extra = []): int
     {
         $now = date('Y-m-d H:i:s');
@@ -41,11 +48,29 @@ class TaskService
             $this->refreshOrderStatus((int)$data['order_id']);
         }
 
+        $assignedTo = isset($data['assigned_to']) ? (int)$data['assigned_to'] : 0;
+        $createdBy = (int)$data['created_by'];
+        if ($assignedTo > 0 && $assignedTo !== $createdBy) {
+            $task = [
+                'id' => $taskId,
+                'type' => $data['type'],
+                'title' => $data['title'],
+                'order_id' => $data['order_id'] ?? null,
+                'due_at' => $data['due_at'] ?? null,
+            ];
+            $this->notificationService->sendTaskAssigned($assignedTo, $task, $createdBy);
+        }
+
         return $taskId;
     }
 
     public function updateTask(int $taskId, array $changes, int $operatorId, array $logContext = []): void
     {
+        $existingTask = Db::table('tasks')->where('id', $taskId)->find();
+        if (!$existingTask) {
+            return;
+        }
+
         $update = $changes;
         $update['updated_at'] = date('Y-m-d H:i:s');
         Db::table('tasks')->where('id', $taskId)->update($update);
@@ -55,7 +80,20 @@ class TaskService
         }
         $this->addLog($taskId, $operatorId, 'updated', json_encode($logPayload, JSON_UNESCAPED_UNICODE));
 
-        $orderId = Db::table('tasks')->where('id', $taskId)->value('order_id');
+        $newAssignedTo = isset($changes['assigned_to']) ? (int)$changes['assigned_to'] : 0;
+        $oldAssignedTo = (int)($existingTask['assigned_to'] ?? 0);
+        if ($newAssignedTo > 0 && $newAssignedTo !== $oldAssignedTo && $newAssignedTo !== $operatorId) {
+            $task = [
+                'id' => $taskId,
+                'type' => $existingTask['type'],
+                'title' => $existingTask['title'],
+                'order_id' => $existingTask['order_id'] ?? null,
+                'due_at' => $existingTask['due_at'] ?? null,
+            ];
+            $this->notificationService->sendTaskAssigned($newAssignedTo, $task, $operatorId);
+        }
+
+        $orderId = $existingTask['order_id'] ?? null;
         if ($orderId) {
             $this->refreshOrderStatus((int)$orderId);
         }

@@ -3,6 +3,7 @@
 namespace app\admin\controller;
 
 use app\common\controller\AdminApiController;
+use app\common\service\NotificationService;
 use think\facade\Db;
 use think\facade\Request;
 
@@ -35,12 +36,36 @@ class Leave extends AdminApiController
         if (!in_array($status, ['approved', 'rejected'], true)) {
             $this->errorResponse('状态非法');
         }
+        
+        $oldStatus = $leave['status'] ?? '';
+        if ($oldStatus !== 'pending') {
+            $row = Db::table('leave_requests')->alias('l')
+                ->leftJoin('users u', 'u.id = l.user_id')
+                ->field('l.*, u.name as user_name, u.mobile as user_mobile')
+                ->where('l.id', $id)
+                ->find();
+            return $this->success([
+                'leave' => $this->formatLeave($row),
+            ], '状态已更新');
+        }
+        
         $update = [
             'status'      => $status,
             'approver_id' => $this->currentUser['id'] ?? null,
             'approved_at' => date('Y-m-d H:i:s'),
         ];
         Db::table('leave_requests')->where('id', $id)->update($update);
+        
+        $notificationService = new NotificationService();
+        $applicantId = (int)$leave['user_id'];
+        $reason = $payload['remark'] ?? $payload['reason'] ?? null;
+        
+        if ($status === 'approved') {
+            $notificationService->sendLeaveApproved($applicantId, $leave);
+        } else {
+            $notificationService->sendLeaveRejected($applicantId, $leave, $reason);
+        }
+        
         $row = Db::table('leave_requests')->alias('l')
             ->leftJoin('users u', 'u.id = l.user_id')
             ->field('l.*, u.name as user_name, u.mobile as user_mobile')

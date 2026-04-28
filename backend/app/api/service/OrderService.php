@@ -3,15 +3,18 @@
 namespace app\api\service;
 
 use app\common\service\TaskService;
+use app\common\service\NotificationService;
 use think\facade\Db;
 
 class OrderService
 {
     protected TaskService $taskService;
+    protected NotificationService $notificationService;
 
     public function __construct()
     {
         $this->taskService = new TaskService();
+        $this->notificationService = new NotificationService();
     }
 
     public function create(array $payload, array $user): array
@@ -71,7 +74,23 @@ class OrderService
             return $orderId;
         });
 
-        return $this->fetchDetail($orderId, $user);
+        $detail = $this->fetchDetail($orderId, $user);
+        
+        if (!$isDraft && !empty($detail['order'])) {
+            $order = $detail['order'];
+            $salesOwnerId = (int)($order['sales_owner_id'] ?? 0);
+            $initiatorId = (int)($order['initiator_id'] ?? 0);
+            
+            if ($initiatorId > 0) {
+                $this->notificationService->sendOrderCreated($initiatorId, $order, $user['id']);
+            }
+            
+            if ($salesOwnerId > 0 && $salesOwnerId !== $initiatorId) {
+                $this->notificationService->sendOrderCreated($salesOwnerId, $order, $user['id']);
+            }
+        }
+        
+        return $detail;
     }
 
     public function updateDraft(int $orderId, array $payload, array $user): array
@@ -142,7 +161,23 @@ class OrderService
             }
         });
 
-        return $this->fetchDetail($orderId, $user);
+        $detail = $this->fetchDetail($orderId, $user);
+        
+        if ($isSubmit && !empty($detail['order'])) {
+            $order = $detail['order'];
+            $salesOwnerId = (int)($order['sales_owner_id'] ?? 0);
+            $initiatorId = (int)($order['initiator_id'] ?? 0);
+            
+            if ($initiatorId > 0) {
+                $this->notificationService->sendOrderCreated($initiatorId, $order, $user['id']);
+            }
+            
+            if ($salesOwnerId > 0 && $salesOwnerId !== $initiatorId) {
+                $this->notificationService->sendOrderCreated($salesOwnerId, $order, $user['id']);
+            }
+        }
+        
+        return $detail;
     }
 
     protected function createProducts(int $orderId, array $products): void
