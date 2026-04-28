@@ -48,17 +48,24 @@ class TaskService
             $this->refreshOrderStatus((int)$data['order_id']);
         }
 
-        $assignedTo = isset($data['assigned_to']) ? (int)$data['assigned_to'] : 0;
-        $createdBy = (int)$data['created_by'];
-        if ($assignedTo > 0 && $assignedTo !== $createdBy) {
-            $task = [
-                'id' => $taskId,
-                'type' => $data['type'],
-                'title' => $data['title'],
-                'order_id' => $data['order_id'] ?? null,
-                'due_at' => $data['due_at'] ?? null,
-            ];
-            $this->notificationService->sendTaskAssigned($assignedTo, $task, $createdBy);
+        $task = Db::table('tasks')->where('id', $taskId)->find();
+        if ($task) {
+            $assignedTo = (int)($task['assigned_to'] ?? 0);
+            $createdBy = (int)$task['created_by'];
+            if ($assignedTo > 0) {
+                if ($createdBy > 0 && $assignedTo === $createdBy) {
+                    // 任务创建者自己分配给自己，不发送通知
+                } else {
+                    $taskData = [
+                        'id' => $taskId,
+                        'type' => $task['type'],
+                        'title' => $task['title'],
+                        'order_id' => $task['order_id'] ?? null,
+                        'due_at' => $task['due_at'] ?? null,
+                    ];
+                    $this->notificationService->sendTaskAssigned($assignedTo, $taskData, $createdBy);
+                }
+            }
         }
 
         return $taskId;
