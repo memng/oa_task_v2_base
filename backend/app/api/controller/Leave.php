@@ -137,41 +137,99 @@ class Leave extends ApiController
     {
         $data = $this->requestData();
         $status = $data['status'] ?? 'approved';
-        $leaveRequest = Db::table('leave_requests')->where('id', $id)->find();
-        if (!$leaveRequest) {
-            $this->errorResponse('请假申请不存在');
+        $userId = $this->user()['id'];
+
+        if (!in_array($status, ['approved', 'rejected'], true)) {
+            $this->errorResponse('无效的审批状态');
         }
-        $fromStatus = $leaveRequest['status'];
-        Db::table('leave_requests')->where('id', $id)->update([
-            'status'      => $status,
-            'approver_id' => $this->user()['id'],
-            'approved_at' => date('Y-m-d H:i:s'),
-        ]);
-        $this->logAudit($id, $status === 'approved' ? 'approve' : 'reject', $fromStatus, $status, $this->user()['id'], $data['reason'] ?? null);
-        return $this->success([], '审批完成');
+
+        Db::startTrans();
+        try {
+            $leaveRequest = Db::table('leave_requests')
+                ->where('id', $id)
+                ->lock(true)
+                ->find();
+
+            if (!$leaveRequest) {
+                Db::rollback();
+                $this->errorResponse('请假申请不存在');
+            }
+            if ($leaveRequest['status'] !== 'pending') {
+                Db::rollback();
+                $this->errorResponse('仅待审批状态的申请可审批');
+            }
+
+            $updated = Db::table('leave_requests')
+                ->where('id', $id)
+                ->where('status', 'pending')
+                ->update([
+                    'status'      => $status,
+                    'approver_id' => $userId,
+                    'approved_at' => date('Y-m-d H:i:s'),
+                ]);
+
+            if ($updated !== 1) {
+                Db::rollback();
+                $this->errorResponse('审批失败，请重试');
+            }
+
+            $action = $status === 'approved' ? 'approve' : 'reject';
+            $this->logAudit($id, $action, 'pending', $status, $userId, $data['reason'] ?? null);
+
+            Db::commit();
+            return $this->success([], '审批完成');
+        } catch (\Exception $e) {
+            Db::rollback();
+            $this->errorResponse('审批失败：' . $e->getMessage());
+        }
     }
 
     public function cancel($id)
     {
         $data = $this->requestData();
         $userId = $this->user()['id'];
-        $leaveRequest = Db::table('leave_requests')->where('id', $id)->find();
-        if (!$leaveRequest) {
-            $this->errorResponse('请假申请不存在');
+
+        Db::startTrans();
+        try {
+            $leaveRequest = Db::table('leave_requests')
+                ->where('id', $id)
+                ->lock(true)
+                ->find();
+
+            if (!$leaveRequest) {
+                Db::rollback();
+                $this->errorResponse('请假申请不存在');
+            }
+            if ($leaveRequest['user_id'] != $userId) {
+                Db::rollback();
+                $this->errorResponse('仅申请人本人可撤回申请');
+            }
+            if ($leaveRequest['status'] !== 'pending') {
+                Db::rollback();
+                $this->errorResponse('仅待审批状态的申请可撤回');
+            }
+
+            $updated = Db::table('leave_requests')
+                ->where('id', $id)
+                ->where('status', 'pending')
+                ->update([
+                    'status'     => 'cancelled',
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ]);
+
+            if ($updated !== 1) {
+                Db::rollback();
+                $this->errorResponse('撤回失败，请重试');
+            }
+
+            $this->logAudit($id, 'cancel', 'pending', 'cancelled', $userId, $data['reason'] ?? null);
+
+            Db::commit();
+            return $this->success([], '申请已撤回');
+        } catch (\Exception $e) {
+            Db::rollback();
+            $this->errorResponse('撤回失败：' . $e->getMessage());
         }
-        if ($leaveRequest['user_id'] != $userId) {
-            $this->errorResponse('仅申请人本人可撤回申请');
-        }
-        if ($leaveRequest['status'] !== 'pending') {
-            $this->errorResponse('仅待审批状态的申请可撤回');
-        }
-        $fromStatus = $leaveRequest['status'];
-        Db::table('leave_requests')->where('id', $id)->update([
-            'status'    => 'cancelled',
-            'updated_at' => date('Y-m-d H:i:s'),
-        ]);
-        $this->logAudit($id, 'cancel', $fromStatus, 'cancelled', $userId, $data['reason'] ?? null);
-        return $this->success([], '申请已撤回');
     }
 
     private function logAudit($leaveRequestId, $action, $fromStatus, $toStatus, $operatorId, $reason = null)

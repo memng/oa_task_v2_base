@@ -81,10 +81,10 @@ Route::group('api', function () {
     Route::post('factory-visits', '\app\api\controller\FactoryVisit@save');
     Route::put('factory-visits/:id', '\app\api\controller\FactoryVisit@update');
 
-    Route::get('leave', '\app\api\controller\Leave@index');
-    Route::post('leave', '\app\api\controller\Leave@save');
     Route::post('leave/:id/approve', '\app\api\controller\Leave@approve');
     Route::post('leave/:id/cancel', '\app\api\controller\Leave@cancel');
+    Route::get('leave', '\app\api\controller\Leave@index');
+    Route::post('leave', '\app\api\controller\Leave@save');
 
     Route::get('voltages', '\app\api\controller\Voltage@index');
     Route::get('currencies', '\app\api\controller\Currency@index');
