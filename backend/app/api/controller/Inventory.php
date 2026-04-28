@@ -98,13 +98,11 @@ class Inventory extends ApiController
                 }
             }
 
-            $newQuantity = $inventory['quantity'] - $quantity;
-
             $updateResult = Db::table('inventory')
                 ->where('id', $inventoryId)
                 ->where('quantity', '>=', $quantity)
+                ->dec('quantity', $quantity)
                 ->update([
-                    'quantity' => $newQuantity,
                     'updated_at' => date('Y-m-d H:i:s'),
                 ]);
 
@@ -112,6 +110,9 @@ class Inventory extends ApiController
                 Db::rollback();
                 $this->errorResponse('库存扣减失败，可能库存已被其他操作扣减');
             }
+
+            $updatedInventory = Db::table('inventory')->where('id', $inventoryId)->find();
+            $newQuantity = $updatedInventory['quantity'];
 
             Db::table('inventory_usages')->insert([
                 'inventory_id' => $inventoryId,
