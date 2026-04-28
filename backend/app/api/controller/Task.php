@@ -250,12 +250,68 @@ class Task extends ApiController
             'purchase_status' => $payload['purchase_status'] ?? null,
             'source_location' => $payload['source_location'] ?? null,
         ], static fn($value) => $value !== null && $value !== '');
-        $this->taskService->updateProcurement($taskId, $procurementPayload);
 
-        if (!empty($payload['status'])) {
-            $this->taskService->updateTask($taskId, [
-                'status' => $payload['status'],
-            ], $user['id']);
+        Db::startTrans();
+        try {
+            $inventoryItemId = !empty($payload['inventory_item_id']) ? (int)$payload['inventory_item_id'] : null;
+            $inventoryQuantity = !empty($payload['inventory_quantity']) ? (int)$payload['inventory_quantity'] : null;
+
+            if ($inventoryItemId && $inventoryQuantity > 0) {
+                $inventory = Db::table('inventory')->where('id', $inventoryItemId)->find();
+                if (!$inventory) {
+                    Db::rollback();
+                    $this->errorResponse('库存不存在', 404);
+                }
+
+                if ($inventory['quantity'] < $inventoryQuantity) {
+                    Db::rollback();
+                    $this->errorResponse('库存不足，当前可用：' . $inventory['quantity']);
+                }
+
+                $newQuantity = $inventory['quantity'] - $inventoryQuantity;
+                Db::table('inventory')->where('id', $inventoryItemId)->update([
+                    'quantity' => $newQuantity,
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ]);
+
+                Db::table('inventory_usages')->insert([
+                    'inventory_id' => $inventoryItemId,
+                    'task_id' => $taskId,
+                    'user_id' => $user['id'],
+                    'quantity' => $inventoryQuantity,
+                    'remaining_quantity' => $newQuantity,
+                    'note' => '采购任务扣减库存',
+                    'created_at' => date('Y-m-d H:i:s'),
+                ]);
+
+                Db::table('task_logs')->insert([
+                    'task_id' => $taskId,
+                    'user_id' => $user['id'],
+                    'action' => 'procurement',
+                    'message' => json_encode([
+                        'inventory_usage' => [
+                            'item_id' => $inventoryItemId,
+                            'product_name' => $inventory['product_name'],
+                            'quantity' => $inventoryQuantity,
+                            'remaining_quantity' => $newQuantity,
+                        ]
+                    ]),
+                    'created_at' => date('Y-m-d H:i:s'),
+                ]);
+            }
+
+            $this->taskService->updateProcurement($taskId, $procurementPayload);
+
+            if (!empty($payload['status'])) {
+                $this->taskService->updateTask($taskId, [
+                    'status' => $payload['status'],
+                ], $user['id']);
+            }
+
+            Db::commit();
+        } catch (\Exception $e) {
+            Db::rollback();
+            $this->errorResponse('操作失败：' . $e->getMessage());
         }
 
         return $this->read($taskId);

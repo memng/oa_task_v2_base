@@ -88,6 +88,9 @@ Route::group('api', function () {
     Route::get('voltages', '\app\api\controller\Voltage@index');
     Route::get('currencies', '\app\api\controller\Currency@index');
 
+    Route::get('inventory', '\app\api\controller\Inventory@index');
+    Route::post('inventory/:id/consume', '\app\api\controller\Inventory@consume');
+
     Route::post('upload', '\app\api\controller\Upload@save');
     Route::post('upload/receipt', '\app\api\controller\Upload@receipt');
 
@@ -129,5 +132,9 @@ Route::group('api', function () {
         Route::post('shift-schedules', '\app\admin\controller\ShiftSchedule@save');
         Route::put('shift-schedules/:id', '\app\admin\controller\ShiftSchedule@update');
         Route::delete('shift-schedules/:id', '\app\admin\controller\ShiftSchedule@delete');
+
+        Route::get('inventory', '\app\admin\controller\Inventory@index');
+        Route::post('inventory', '\app\admin\controller\Inventory@save');
+        Route::put('inventory/:id', '\app\admin\controller\Inventory@update');
     });
 });
