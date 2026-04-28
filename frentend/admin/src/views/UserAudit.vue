@@ -66,12 +66,13 @@ const approve = async (row) => {
 }
 
 const reject = async (row) => {
-  await ElMessageBox.confirm('确认拒绝该用户吗？', '提示', {
+  const { value } = await ElMessageBox.prompt('请输入拒绝原因', '拒绝注册', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
-    type: 'warning'
+    inputPattern: /\S+/,
+    inputErrorMessage: '拒绝原因不能为空'
   })
-  await api.rejectUser(row.id)
+  await api.rejectUser(row.id, { reject_reason: value })
   ElMessage.success('已拒绝该注册')
   fetchList()
 }

@@ -93,8 +93,8 @@ export const api = {
   approveUser(id) {
     return client.post(`/admin/users/${id}/approve`)
   },
-  rejectUser(id) {
-    return client.post(`/admin/users/${id}/reject`)
+  rejectUser(id, data) {
+    return client.post(`/admin/users/${id}/reject`, data)
   },
   adminSuppliers(params = {}) {
     return client.get('/admin/suppliers', { params })

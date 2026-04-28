@@ -53,15 +53,22 @@ class User extends AdminApiController
 
     public function reject(int $id)
     {
+        $payload = $this->requestData();
+        $rejectReason = trim((string)($payload['reject_reason'] ?? ''));
+
         $user = Db::table('users')->find($id);
         if (!$user) {
             $this->errorResponse('用户不存在');
         }
+        if (empty($rejectReason)) {
+            $this->errorResponse('请填写拒绝原因');
+        }
         Db::table('users')
             ->where('id', $id)
             ->update([
-                'status'     => 'disabled',
-                'updated_at' => date('Y-m-d H:i:s'),
+                'status'        => 'disabled',
+                'reject_reason' => $rejectReason,
+                'updated_at'    => date('Y-m-d H:i:s'),
             ]);
         return $this->success([], '已拒绝该注册');
     }
