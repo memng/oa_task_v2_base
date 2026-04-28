@@ -337,7 +337,11 @@ class Auth extends ApiController
             $this->errorResponse('账号正在审核中，请耐心等待');
         }
         if ($status === 'disabled') {
-            $this->errorResponse('账号已禁用，请联系管理员');
+            $rejectReason = trim((string)($user['reject_reason'] ?? ''));
+            $message = empty($rejectReason) ? '审核未通过，请联系管理员' : $rejectReason;
+            $this->errorResponse($message, 400, [
+                'reject_reason' => $rejectReason ?: null,
+            ]);
         }
     }
 
