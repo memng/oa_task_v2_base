@@ -19,16 +19,41 @@
     </view>
     <view class="card">
       <view class="section-title">票据上传</view>
-      <view class="upload" @click="upload" :class="{ disabled: uploading }">
-        <template v-if="receiptUrl">
-          <image class="receipt-preview" :src="receiptUrl" mode="aspectFit" />
-          <text class="tip">点击可重新上传</text>
-        </template>
-        <view v-else class="placeholder">
-          <text>点击上传票据</text>
+      <view class="upload-list">
+        <view 
+          v-for="(file, index) in uploadedFiles" 
+          :key="index" 
+          class="upload-item"
+        >
+          <view class="preview-wrapper">
+            <image 
+              v-if="isImageFile(file.name)" 
+              class="file-preview" 
+              :src="file.url" 
+              mode="aspectFill" 
+            />
+            <view v-else class="file-icon">
+              <uni-icons type="document" size="40" color="#666" />
+            </view>
+            <view class="delete-btn" @click.stop="removeFile(index)">
+              <uni-icons type="close" size="24" color="#fff" />
+            </view>
+          </view>
+          <text class="file-name-text">{{ file.name }}</text>
+        </view>
+        <view 
+          class="upload-item upload-btn" 
+          @click="upload" 
+          :class="{ disabled: uploading }"
+          v-if="uploadedFiles.length < MAX_UPLOAD_COUNT"
+        >
+          <uni-icons type="plus" size="48" color="#ccc" />
+          <text class="upload-tip">添加票据</text>
         </view>
       </view>
-      <view v-if="receiptName" class="file-name">{{ receiptName }}</view>
+      <view v-if="uploadedFiles.length === 0" class="empty-hint">
+        <text class="hint-text">最多可上传 {{ MAX_UPLOAD_COUNT }} 个票据文件</text>
+      </view>
     </view>
     <button class="primary" :loading="submitting" @click="submit">提交报销</button>
 
@@ -88,8 +113,36 @@
         </view>
       </view>
 
-      <view class="card-footer" v-if="item.receipt_url">
-        <view class="attachment-section" @click="viewAttachment(item)">
+      <view class="card-footer" v-if="item.receipts && item.receipts.length > 0">
+        <view class="attachments-header">
+          <text class="attachments-title">票据附件 ({{ item.receipts.length }})</text>
+        </view>
+        <view class="attachments-list">
+          <view 
+            v-for="(receipt, idx) in item.receipts" 
+            :key="idx"
+            class="attachment-item" 
+            @click="viewAttachment(receipt)"
+          >
+            <view class="attachment-icon">
+              <image 
+                v-if="isImageFile(receipt.file_name)" 
+                class="attachment-preview" 
+                :src="resolveAssetUrl(receipt.url)" 
+                mode="aspectFill" 
+              />
+              <uni-icons v-else type="document" size="36" color="#1677ff" />
+            </view>
+            <view class="attachment-info">
+              <text class="attachment-name">{{ receipt.file_name || '票据附件' }}</text>
+              <text class="attachment-tip">点击查看</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="card-footer" v-else-if="item.receipt_url">
+        <view class="attachment-section" @click="viewAttachment({ url: item.receipt_url, file_name: item.receipt_name })">
           <view class="attachment-icon">
             <uni-icons type="document" size="36" color="#1677ff" />
           </view>
@@ -126,6 +179,11 @@ import { reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api, uploadReceipt, resolveAssetUrl } from '../../utils/request'
 
+const MAX_UPLOAD_COUNT = 9
+const MAX_FILE_SIZE = 1024 * 1024
+const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'pdf']
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'bmp']
+
 const types = [
   { label: '差旅费用', value: 'travel' },
   { label: '采购费用', value: 'purchase' }
@@ -135,10 +193,9 @@ const form = reactive({
   type: 'travel',
   amount: '',
   remark: '',
-  receipt_media_id: null
+  receipt_media_ids: []
 })
-const receiptName = ref('')
-const receiptUrl = ref('')
+const uploadedFiles = ref([])
 const uploading = ref(false)
 const submitting = ref(false)
 
@@ -158,12 +215,15 @@ const currentFilterType = ref(filterTypeOptions[0])
 const filterStartDate = ref('')
 const filterEndDate = ref('')
 
-const MAX_FILE_SIZE = 1024 * 1024
-const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'pdf']
-
 const getFileExtension = (filePath) => {
   const ext = filePath.split('.').pop().toLowerCase()
   return ext
+}
+
+const isImageFile = (fileName) => {
+  if (!fileName) return false
+  const ext = getFileExtension(fileName)
+  return IMAGE_EXTENSIONS.includes(ext)
 }
 
 const validateFile = (filePath, size = null) => {
@@ -201,18 +261,19 @@ const chooseFile = () =>
   new Promise((resolve, reject) => {
     if (typeof uni.chooseMessageFile === 'function') {
       uni.chooseMessageFile({
-        count: 1,
+        count: MAX_UPLOAD_COUNT - uploadedFiles.value.length,
         type: 'all',
         success: (res) => {
-          const file = res.tempFiles?.[0]
-          if (file) {
-            resolve({
+          const files = res.tempFiles || []
+          if (files.length > 0) {
+            const result = files.map(file => ({
               path: file.path || file.tempFilePath,
               name: file.name,
               size: file.size
-            })
+            }))
+            resolve(result)
           } else {
-            resolve(null)
+            resolve([])
           }
         },
         fail: reject
@@ -220,18 +281,19 @@ const chooseFile = () =>
       return
     }
     uni.chooseImage({
-      count: 1,
+      count: MAX_UPLOAD_COUNT - uploadedFiles.value.length,
       sourceType: ['album', 'camera'],
       success: (res) => {
-        const path = res.tempFilePaths?.[0]
-        if (path) {
-          resolve({
+        const paths = res.tempFilePaths || []
+        if (paths.length > 0) {
+          const result = paths.map(path => ({
             path,
             name: `image.${getFileExtension(path)}`,
             size: null
-          })
+          }))
+          resolve(result)
         } else {
-          resolve(null)
+          resolve([])
         }
       },
       fail: reject
@@ -243,34 +305,54 @@ const onTypeChange = (e) => {
   form.type = currentType.value.value
 }
 
+const removeFile = (index) => {
+  uploadedFiles.value.splice(index, 1)
+  form.receipt_media_ids.splice(index, 1)
+}
+
 const upload = async () => {
   if (uploading.value) return
+  if (uploadedFiles.value.length >= MAX_UPLOAD_COUNT) {
+    uni.showToast({ title: `最多只能上传 ${MAX_UPLOAD_COUNT} 个文件`, icon: 'none' })
+    return
+  }
+  
   try {
     uploading.value = true
-    const file = await chooseFile()
-    if (!file) return
+    const files = await chooseFile()
+    if (!files || files.length === 0) return
 
-    let fileSize = file.size
-    if (!fileSize) {
-      try {
-        const fileInfo = await getFileInfo(file.path)
-        fileSize = fileInfo.size
-      } catch (e) {
-        console.error('获取文件信息失败', e)
+    for (const file of files) {
+      let fileSize = file.size
+      if (!fileSize) {
+        try {
+          const fileInfo = await getFileInfo(file.path)
+          fileSize = fileInfo.size
+        } catch (e) {
+          console.error('获取文件信息失败', e)
+        }
+      }
+
+      const validation = validateFile(file.path, fileSize)
+      if (!validation.valid) {
+        uni.showToast({ title: validation.message, icon: 'none' })
+        continue
+      }
+
+      const result = await uploadReceipt(file.path)
+      if (result && result.media_id) {
+        uploadedFiles.value.push({
+          media_id: result.media_id,
+          name: file.name || result.file_name || '票据附件',
+          url: result.url || ''
+        })
+        form.receipt_media_ids.push(result.media_id)
       }
     }
-
-    const validation = validateFile(file.path, fileSize)
-    if (!validation.valid) {
-      uni.showToast({ title: validation.message, icon: 'none' })
-      return
+    
+    if (uploadedFiles.value.length > 0) {
+      uni.showToast({ title: '上传成功', icon: 'success' })
     }
-
-    const result = await uploadReceipt(file.path)
-    form.receipt_media_id = result.media_id
-    receiptName.value = file.name || result.file_name || '票据附件'
-    receiptUrl.value = result.url || ''
-    uni.showToast({ title: '上传成功', icon: 'success' })
   } catch (error) {
     if (error?.errMsg && error.errMsg.includes('cancel')) {
       return
@@ -289,18 +371,23 @@ const submit = async () => {
   }
   submitting.value = true
   try {
-    await api.createReimburse({
+    const payload = {
       type: form.type,
       amount: Number(form.amount),
-      remark: form.remark,
-      receipt_media_id: form.receipt_media_id
-    })
+      remark: form.remark
+    }
+    
+    if (form.receipt_media_ids.length > 0) {
+      payload.receipt_media_ids = form.receipt_media_ids
+    }
+    
+    await api.createReimburse(payload)
     uni.showToast({ title: '报销已提交', icon: 'success' })
+    
     form.amount = ''
     form.remark = ''
-    form.receipt_media_id = null
-    receiptName.value = ''
-    receiptUrl.value = ''
+    form.receipt_media_ids = []
+    uploadedFiles.value = []
     
     setTimeout(() => {
       fetchList(true)
@@ -408,14 +495,14 @@ const searchList = () => {
   fetchList(true)
 }
 
-const viewAttachment = (item) => {
-  if (!item.receipt_url) {
+const viewAttachment = (receipt) => {
+  if (!receipt || !receipt.url) {
     uni.showToast({ title: '附件不存在', icon: 'none' })
     return
   }
 
-  const fullUrl = resolveAssetUrl(item.receipt_url)
-  const fileName = item.receipt_name || 'attachment'
+  const fullUrl = resolveAssetUrl(receipt.url)
+  const fileName = receipt.file_name || 'attachment'
   const ext = fileName.split('.').pop().toLowerCase()
 
   if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) {
@@ -503,39 +590,98 @@ textarea {
   border-radius: 16rpx;
   padding: 16rpx;
 }
-.upload {
-  border: 1rpx dashed #1677ff;
-  border-radius: 16rpx;
+
+.upload-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.upload-item {
+  width: 160rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.preview-wrapper {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background: #f7f8fa;
+}
+
+.file-preview {
+  width: 100%;
+  height: 100%;
+}
+
+.file-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f5ff;
+}
+
+.delete-btn {
+  position: absolute;
+  top: 4rpx;
+  right: 4rpx;
+  width: 40rpx;
+  height: 40rpx;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-name-text {
+  font-size: 22rpx;
+  color: #666;
   text-align: center;
-  padding: 20rpx;
-  color: #1677ff;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-btn {
+  width: 160rpx;
+  height: 160rpx;
+  border: 2rpx dashed #d9d9d9;
+  border-radius: 12rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8rpx;
 }
-.upload.disabled {
-  opacity: 0.6;
+
+.upload-btn.disabled {
+  opacity: 0.5;
 }
-.placeholder {
-  padding: 20rpx 0;
-}
-.receipt-preview {
-  width: 200rpx;
-  height: 200rpx;
-  border-radius: 8rpx;
-  background: #f7f8fa;
-  margin-bottom: 8rpx;
-}
-.tip {
-  font-size: 22rpx;
+
+.upload-tip {
+  font-size: 24rpx;
   color: #999;
 }
-.file-name {
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #333;
+
+.empty-hint {
+  margin-top: 16rpx;
+  text-align: center;
 }
+
+.hint-text {
+  font-size: 24rpx;
+  color: #999;
+}
+
 .primary {
   background: #1677ff;
   color: #fff;
@@ -708,11 +854,26 @@ textarea {
   border-top: 1rpx solid #f0f0f0;
 }
 
-.attachment-section {
+.attachments-header {
+  margin-bottom: 12rpx;
+}
+
+.attachments-title {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.attachment-item {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  padding: 16rpx;
+  padding: 12rpx;
   background: #fafafa;
   border-radius: 12rpx;
 }
@@ -725,6 +886,12 @@ textarea {
   justify-content: center;
   background: #e6f7ff;
   border-radius: 12rpx;
+  overflow: hidden;
+}
+
+.attachment-preview {
+  width: 100%;
+  height: 100%;
 }
 
 .attachment-info {
@@ -742,6 +909,15 @@ textarea {
 .attachment-tip {
   font-size: 22rpx;
   color: #999;
+}
+
+.attachment-section {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx;
+  background: #fafafa;
+  border-radius: 12rpx;
 }
 
 .loading,
