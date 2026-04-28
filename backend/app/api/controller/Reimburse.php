@@ -4,6 +4,7 @@ namespace app\api\controller;
 
 use app\common\controller\ApiController;
 use think\facade\Db;
+use think\facade\Request;
 
 class Reimburse extends ApiController
 {
@@ -12,7 +13,7 @@ class Reimburse extends ApiController
     public function index()
     {
         $userId = $this->user()['id'];
-        $params = $this->requestData();
+        $params = Request::param();
         
         $page = isset($params['page']) ? max(1, (int)$params['page']) : 1;
         $pageSize = isset($params['pageSize']) ? max(1, (int)$params['pageSize']) : 2;
