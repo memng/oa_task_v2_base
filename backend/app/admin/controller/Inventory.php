@@ -67,7 +67,6 @@ class Inventory extends AdminApiController
             'requirements' => $payload['requirements'] ?? null,
             'source_type' => $payload['source_type'] ?? 'manual',
             'source_task_id' => !empty($payload['source_task_id']) ? (int)$payload['source_task_id'] : null,
-            'created_by' => $this->currentUser['id'] ?? null,
             'created_at' => $now,
             'updated_at' => $now,
         ]);
