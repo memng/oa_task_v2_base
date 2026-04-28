@@ -88,7 +88,7 @@ const quickActions = [
 
 const shortcuts = [
   { title: '文件归档', path: '/pages/order/files/index', icon: `${iconsBase}/archive.png` },
-  { title: '报销申请', path: '/pages/finance/reimburse', icon: `${iconsBase}/reimburse.png` },
+  { title: '报销记录', path: '/pages/finance/reimburse-list', icon: `${iconsBase}/reimburse.png` },
   { title: '请假申请', path: '/pages/leave/index', icon: `${iconsBase}/attendance.png` },
   { title: '设置', path: '/pages/mine/profile', icon: `${iconsBase}/settings.png` }
 ]

@@ -11,13 +11,40 @@ class Reimburse extends ApiController
 
     public function index()
     {
-        $items = Db::table('expense_reports')
-            ->where('user_id', $this->user()['id'])
+        $userId = $this->user()['id'];
+        $params = $this->requestData();
+        
+        $page = isset($params['page']) ? max(1, (int)$params['page']) : 1;
+        $pageSize = isset($params['pageSize']) ? max(1, (int)$params['pageSize']) : 2;
+        
+        $query = Db::table('expense_reports')
+            ->where('user_id', $userId);
+        
+        if (!empty($params['type'])) {
+            $query->where('type', $params['type']);
+        }
+        
+        if (!empty($params['startDate'])) {
+            $query->where('created_at', '>=', $params['startDate'] . ' 00:00:00');
+        }
+        
+        if (!empty($params['endDate'])) {
+            $query->where('created_at', '<=', $params['endDate'] . ' 23:59:59');
+        }
+        
+        $total = $query->count();
+        $items = $query
             ->order('id', 'desc')
+            ->page($page, $pageSize)
             ->select()
             ->toArray();
+        
         return $this->success([
             'items' => array_map([$this, 'formatReport'], $items),
+            'total' => $total,
+            'page' => $page,
+            'pageSize' => $pageSize,
+            'totalPages' => ceil($total / $pageSize),
         ]);
     }
 
