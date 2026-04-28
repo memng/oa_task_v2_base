@@ -257,6 +257,22 @@ class Task extends ApiController
             $inventoryQuantity = !empty($payload['inventory_quantity']) ? (int)$payload['inventory_quantity'] : null;
 
             if ($inventoryItemId && $inventoryQuantity > 0) {
+                $existingUsage = Db::table('inventory_usages')
+                    ->where('inventory_id', $inventoryItemId)
+                    ->where('task_id', $taskId)
+                    ->find();
+
+                if ($existingUsage) {
+                    $this->taskService->updateProcurement($taskId, $procurementPayload);
+                    if (!empty($payload['status'])) {
+                        $this->taskService->updateTask($taskId, [
+                            'status' => $payload['status'],
+                        ], $user['id']);
+                    }
+                    Db::commit();
+                    return $this->read($taskId);
+                }
+
                 $inventory = Db::table('inventory')->where('id', $inventoryItemId)->find();
                 if (!$inventory) {
                     Db::rollback();
@@ -269,10 +285,18 @@ class Task extends ApiController
                 }
 
                 $newQuantity = $inventory['quantity'] - $inventoryQuantity;
-                Db::table('inventory')->where('id', $inventoryItemId)->update([
-                    'quantity' => $newQuantity,
-                    'updated_at' => date('Y-m-d H:i:s'),
-                ]);
+                $updateResult = Db::table('inventory')
+                    ->where('id', $inventoryItemId)
+                    ->where('quantity', '>=', $inventoryQuantity)
+                    ->update([
+                        'quantity' => $newQuantity,
+                        'updated_at' => date('Y-m-d H:i:s'),
+                    ]);
+
+                if ($updateResult === 0) {
+                    Db::rollback();
+                    $this->errorResponse('库存扣减失败，可能库存已被其他操作扣减');
+                }
 
                 Db::table('inventory_usages')->insert([
                     'inventory_id' => $inventoryItemId,

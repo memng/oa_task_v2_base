@@ -84,15 +84,38 @@ class Inventory extends ApiController
 
         Db::startTrans();
         try {
+            $taskId = !empty($data['task_id']) ? (int)$data['task_id'] : null;
+
+            if ($taskId) {
+                $existingUsage = Db::table('inventory_usages')
+                    ->where('inventory_id', $inventoryId)
+                    ->where('task_id', $taskId)
+                    ->find();
+
+                if ($existingUsage) {
+                    Db::rollback();
+                    $this->errorResponse('该任务已扣减过此库存');
+                }
+            }
+
             $newQuantity = $inventory['quantity'] - $quantity;
-            Db::table('inventory')->where('id', $inventoryId)->update([
-                'quantity' => $newQuantity,
-                'updated_at' => date('Y-m-d H:i:s'),
-            ]);
+
+            $updateResult = Db::table('inventory')
+                ->where('id', $inventoryId)
+                ->where('quantity', '>=', $quantity)
+                ->update([
+                    'quantity' => $newQuantity,
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ]);
+
+            if ($updateResult === 0) {
+                Db::rollback();
+                $this->errorResponse('库存扣减失败，可能库存已被其他操作扣减');
+            }
 
             Db::table('inventory_usages')->insert([
                 'inventory_id' => $inventoryId,
-                'task_id' => !empty($data['task_id']) ? (int)$data['task_id'] : null,
+                'task_id' => $taskId,
                 'user_id' => $user['id'],
                 'quantity' => $quantity,
                 'remaining_quantity' => $newQuantity,
