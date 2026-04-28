@@ -215,7 +215,6 @@ const sendWeChatLogin = async (code, userInfo) => {
     })
     handleLoginSuccess(res)
   } catch (error) {
-    uni.showToast({ title: '微信登录失败', icon: 'none' })
     console.error(error)
   } finally {
     loading.value = false

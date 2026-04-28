@@ -63,6 +63,9 @@ class User extends AdminApiController
         if (empty($rejectReason)) {
             $this->errorResponse('请填写拒绝原因');
         }
+        if (mb_strlen($rejectReason) > 500) {
+            $this->errorResponse('拒绝原因不能超过500个字符');
+        }
         Db::table('users')
             ->where('id', $id)
             ->update([
@@ -76,12 +79,13 @@ class User extends AdminApiController
     protected function formatUser(array $user, array $deptMap): array
     {
         return [
-            'id'         => (int)$user['id'],
-            'name'       => $user['name'],
-            'mobile'     => $user['mobile'],
-            'dept_name'  => $user['dept_id'] && isset($deptMap[$user['dept_id']]) ? $deptMap[$user['dept_id']] : null,
-            'status'     => $user['status'],
-            'created_at' => $user['created_at'],
+            'id'           => (int)$user['id'],
+            'name'         => $user['name'],
+            'mobile'       => $user['mobile'],
+            'dept_name'    => $user['dept_id'] && isset($deptMap[$user['dept_id']]) ? $deptMap[$user['dept_id']] : null,
+            'status'       => $user['status'],
+            'reject_reason' => isset($user['reject_reason']) ? $user['reject_reason'] : null,
+            'created_at'   => $user['created_at'],
         ];
     }
 }

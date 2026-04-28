@@ -16,6 +16,13 @@
             <el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="拒绝原因" min-width="200">
+          <template #default="{ row }">
+            <span v-if="row.reject_reason">{{ row.reject_reason }}</span>
+            <span v-else-if="row.status === 'disabled'" class="text-muted">无</span>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button v-if="row.status === 'pending'" size="small" type="success" @click="approve(row)">通过</el-button>
@@ -66,13 +73,21 @@ const approve = async (row) => {
 }
 
 const reject = async (row) => {
-  const { value } = await ElMessageBox.prompt('请输入拒绝原因', '拒绝注册', {
+  const { value } = await ElMessageBox.prompt('请输入拒绝原因（最多500个字符）', '拒绝注册', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
-    inputPattern: /\S+/,
-    inputErrorMessage: '拒绝原因不能为空'
+    inputValidator: (val) => {
+      const trimmed = val.trim()
+      if (!trimmed) {
+        return '拒绝原因不能为空'
+      }
+      if (trimmed.length > 500) {
+        return `拒绝原因不能超过500个字符（当前${trimmed.length}个字符）`
+      }
+      return true
+    }
   })
-  await api.rejectUser(row.id, { reject_reason: value })
+  await api.rejectUser(row.id, { reject_reason: value.trim() })
   ElMessage.success('已拒绝该注册')
   fetchList()
 }
