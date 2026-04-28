@@ -149,8 +149,8 @@ export const api = {
   voltages() {
     return request({ url: '/voltages' })
   },
-  reimburseList() {
-    return request({ url: '/reimburse' })
+  reimburseList(params = {}) {
+    return request({ url: '/reimburse', data: params })
   },
   createReimburse(payload) {
     return request({ url: '/reimburse', method: 'POST', data: payload })
