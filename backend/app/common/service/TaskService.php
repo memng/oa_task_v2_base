@@ -53,18 +53,14 @@ class TaskService
             $assignedTo = (int)($task['assigned_to'] ?? 0);
             $createdBy = (int)$task['created_by'];
             if ($assignedTo > 0) {
-                if ($createdBy > 0 && $assignedTo === $createdBy) {
-                    // 任务创建者自己分配给自己，不发送通知
-                } else {
-                    $taskData = [
-                        'id' => $taskId,
-                        'type' => $task['type'],
-                        'title' => $task['title'],
-                        'order_id' => $task['order_id'] ?? null,
-                        'due_at' => $task['due_at'] ?? null,
-                    ];
-                    $this->notificationService->sendTaskAssigned($assignedTo, $taskData, $createdBy);
-                }
+                $taskData = [
+                    'id' => $taskId,
+                    'type' => $task['type'],
+                    'title' => $task['title'],
+                    'order_id' => $task['order_id'] ?? null,
+                    'due_at' => $task['due_at'] ?? null,
+                ];
+                $this->notificationService->sendTaskAssigned($assignedTo, $taskData, $createdBy);
             }
         }
 
@@ -89,7 +85,7 @@ class TaskService
 
         $newAssignedTo = isset($changes['assigned_to']) ? (int)$changes['assigned_to'] : 0;
         $oldAssignedTo = (int)($existingTask['assigned_to'] ?? 0);
-        if ($newAssignedTo > 0 && $newAssignedTo !== $oldAssignedTo && $newAssignedTo !== $operatorId) {
+        if ($newAssignedTo > 0 && $newAssignedTo !== $oldAssignedTo) {
             $task = [
                 'id' => $taskId,
                 'type' => $existingTask['type'],
