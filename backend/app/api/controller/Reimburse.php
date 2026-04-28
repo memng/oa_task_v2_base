@@ -62,6 +62,20 @@ class Reimburse extends ApiController
         }
         
         $receiptMediaIds = $this->parseReceiptMediaIds($payload);
+        
+        if (!empty($receiptMediaIds)) {
+            if (count($receiptMediaIds) > 9) {
+                $this->errorResponse('最多只能上传9个票据附件');
+            }
+            
+            $validIds = $this->validateAndFilterMediaIds($receiptMediaIds);
+            if (count($validIds) !== count($receiptMediaIds)) {
+                $this->errorResponse('部分票据附件ID无效，请重新上传');
+            }
+            
+            $receiptMediaIds = $validIds;
+        }
+        
         $firstMediaId = !empty($receiptMediaIds) ? $receiptMediaIds[0] : null;
         
         $data = [
@@ -79,6 +93,27 @@ class Reimburse extends ApiController
         return $this->success([
             'report' => $this->formatReport($report),
         ], '报销申请已提交', 201);
+    }
+
+    protected function validateAndFilterMediaIds(array $mediaIds): array
+    {
+        if (empty($mediaIds)) {
+            return [];
+        }
+        
+        $ids = array_map('intval', $mediaIds);
+        $ids = array_unique(array_filter($ids, fn($id) => $id > 0));
+        
+        if (empty($ids)) {
+            return [];
+        }
+        
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $existingMedia = Db::table('media_assets')
+            ->whereIn('id', $ids)
+            ->column('id');
+        
+        return array_values(array_intersect($ids, $existingMedia));
     }
 
     protected function parseReceiptMediaIds(array $payload): array
