@@ -196,12 +196,6 @@
       }
     },
     {
-      "path": "pages/finance/reimburse-list",
-      "style": {
-        "navigationBarTitleText": "报销记录"
-      }
-    },
-    {
       "path": "pages/finance/reimburse",
       "style": {
         "navigationBarTitleText": "费用报销"
