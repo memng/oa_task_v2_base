@@ -96,6 +96,7 @@ class Leave extends ApiController
             'status'        => 'pending',
             'created_at'    => date('Y-m-d H:i:s'),
         ]);
+        $this->logAudit($id, 'create', null, 'pending', $userId, $data['reason'] ?? null);
         return $this->success(['id' => $id], '请假申请已提交', 201);
     }
     
@@ -136,11 +137,53 @@ class Leave extends ApiController
     {
         $data = $this->requestData();
         $status = $data['status'] ?? 'approved';
+        $leaveRequest = Db::table('leave_requests')->where('id', $id)->find();
+        if (!$leaveRequest) {
+            $this->errorResponse('请假申请不存在');
+        }
+        $fromStatus = $leaveRequest['status'];
         Db::table('leave_requests')->where('id', $id)->update([
             'status'      => $status,
             'approver_id' => $this->user()['id'],
             'approved_at' => date('Y-m-d H:i:s'),
         ]);
+        $this->logAudit($id, $status === 'approved' ? 'approve' : 'reject', $fromStatus, $status, $this->user()['id'], $data['reason'] ?? null);
         return $this->success([], '审批完成');
+    }
+
+    public function cancel($id)
+    {
+        $data = $this->requestData();
+        $userId = $this->user()['id'];
+        $leaveRequest = Db::table('leave_requests')->where('id', $id)->find();
+        if (!$leaveRequest) {
+            $this->errorResponse('请假申请不存在');
+        }
+        if ($leaveRequest['user_id'] != $userId) {
+            $this->errorResponse('仅申请人本人可撤回申请');
+        }
+        if ($leaveRequest['status'] !== 'pending') {
+            $this->errorResponse('仅待审批状态的申请可撤回');
+        }
+        $fromStatus = $leaveRequest['status'];
+        Db::table('leave_requests')->where('id', $id)->update([
+            'status'    => 'cancelled',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+        $this->logAudit($id, 'cancel', $fromStatus, 'cancelled', $userId, $data['reason'] ?? null);
+        return $this->success([], '申请已撤回');
+    }
+
+    private function logAudit($leaveRequestId, $action, $fromStatus, $toStatus, $operatorId, $reason = null)
+    {
+        Db::table('leave_request_audits')->insert([
+            'leave_request_id' => $leaveRequestId,
+            'action'            => $action,
+            'from_status'       => $fromStatus,
+            'to_status'         => $toStatus,
+            'operator_id'       => $operatorId,
+            'reason'            => $reason,
+            'created_at'        => date('Y-m-d H:i:s'),
+        ]);
     }
 }

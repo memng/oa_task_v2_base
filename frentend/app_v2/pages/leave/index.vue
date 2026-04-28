@@ -80,6 +80,9 @@
           <text>{{ item.duration_hours }} 小时</text>
         </view>
         <view class="reason">{{ item.reason || '无备注' }}</view>
+        <view v-if="item.status === 'pending'" class="action-row">
+          <button class="action-btn cancel" @click="handleCancel(item)">撤回申请</button>
+        </view>
       </view>
       <view v-if="loading" class="loading">加载中...</view>
       <view v-if="!hasMore && requests.length > 0" class="no-more">没有更多了</view>
@@ -104,7 +107,7 @@ const statusOptions = [
   { label: '审批中', value: 'pending' },
   { label: '已通过', value: 'approved' },
   { label: '已驳回', value: 'rejected' },
-  { label: '已取消', value: 'cancelled' }
+  { label: '已撤回', value: 'cancelled' }
 ]
 
 const currentType = ref(leaveTypes[0])
@@ -315,8 +318,28 @@ const onScrollToLower = () => {
 const statusLabel = (status) => {
   if (status === 'approved') return '已通过'
   if (status === 'rejected') return '已驳回'
-  if (status === 'cancelled') return '已取消'
+  if (status === 'cancelled') return '已撤回'
   return '审批中'
+}
+
+const handleCancel = (item) => {
+  uni.showModal({
+    title: '确认撤回',
+    content: '确定要撤回该请假申请吗？',
+    editable: true,
+    placeholderText: '撤回原因（可选）',
+    success: async (res) => {
+      if (res.confirm) {
+        try {
+          await api.cancelLeave(item.id, { reason: res.content || null })
+          uni.showToast({ title: '已撤回', icon: 'success' })
+          resetAndFetch()
+        } catch (error) {
+          uni.showToast({ title: error?.message || '撤回失败', icon: 'none' })
+        }
+      }
+    }
+  })
 }
 
 const formatType = (type) => {
@@ -455,9 +478,28 @@ textarea {
 .status.rejected {
   color: #ff4d4f;
 }
+.status.cancelled {
+  color: #999;
+}
 .reason {
   font-size: 24rpx;
   color: #666;
+}
+.action-row {
+  margin-top: 12rpx;
+  display: flex;
+  justify-content: flex-end;
+}
+.action-btn {
+  padding: 8rpx 24rpx;
+  font-size: 24rpx;
+  border-radius: 32rpx;
+  line-height: 1.5;
+}
+.action-btn.cancel {
+  background: #fff1f0;
+  color: #ff4d4f;
+  border: 1rpx solid #ffa39e;
 }
 .empty {
   text-align: center;

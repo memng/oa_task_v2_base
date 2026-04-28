@@ -161,6 +161,9 @@ export const api = {
   createLeave(payload) {
     return request({ url: '/leave', method: 'POST', data: payload })
   },
+  cancelLeave(id, payload = {}) {
+    return request({ url: `/leave/${id}/cancel`, method: 'POST', data: payload })
+  },
   lookups() {
     return request({ url: '/lookups' })
   },
