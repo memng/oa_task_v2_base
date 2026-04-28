@@ -284,12 +284,11 @@ class Task extends ApiController
                     $this->errorResponse('库存不足，当前可用：' . $inventory['quantity']);
                 }
 
-                $newQuantity = $inventory['quantity'] - $inventoryQuantity;
                 $updateResult = Db::table('inventory')
                     ->where('id', $inventoryItemId)
                     ->where('quantity', '>=', $inventoryQuantity)
+                    ->dec('quantity', $inventoryQuantity)
                     ->update([
-                        'quantity' => $newQuantity,
                         'updated_at' => date('Y-m-d H:i:s'),
                     ]);
 
@@ -297,6 +296,9 @@ class Task extends ApiController
                     Db::rollback();
                     $this->errorResponse('库存扣减失败，可能库存已被其他操作扣减');
                 }
+
+                $updatedInventory = Db::table('inventory')->where('id', $inventoryItemId)->find();
+                $newQuantity = $updatedInventory['quantity'];
 
                 Db::table('inventory_usages')->insert([
                     'inventory_id' => $inventoryItemId,
