@@ -14,6 +14,7 @@ class NotificationService
 
     const TEMPLATE_ORDER_CREATED = 'order_created';
     const TEMPLATE_TASK_ASSIGNED = 'task_assigned';
+    const TEMPLATE_TASK_URGED = 'task_urged';
     const TEMPLATE_LEAVE_APPROVED = 'leave_approved';
     const TEMPLATE_REIMBURSE_APPROVED = 'reimburse_approved';
     const TEMPLATE_LEAVE_REJECTED = 'leave_rejected';
@@ -72,6 +73,43 @@ class NotificationService
                 'task_type' => $task['type'] ?? null,
                 'order_id' => $task['order_id'] ?? null,
                 'assignor_id' => $assignorId,
+                'due_at' => $task['due_at'] ?? null,
+            ],
+        ]);
+    }
+
+    public function sendTaskUrged(int $userId, array $task, ?int $urgedById = null): void
+    {
+        $typeMap = [
+            'procurement' => '采购任务',
+            'nameplate' => '铭牌制作',
+            'machine_data' => '机器数据',
+            'acceptance' => '机器验收',
+            'packaging' => '打包唛头',
+            'shipment' => '装柜发货',
+            'inspection' => '客户验厂',
+            'temporary' => '临时任务',
+            'factory_order' => '工厂订单',
+            'fee' => '费用',
+            'document' => '资料',
+            'announcement' => '公告',
+        ];
+        $typeLabel = $typeMap[$task['type'] ?? ''] ?? '任务';
+        $title = '任务催办提醒';
+        $content = sprintf('您负责的%s「%s」已被催办，请及时处理。', $typeLabel, $task['title'] ?? '');
+        
+        $this->createNotification($userId, [
+            'channel' => self::CHANNEL_SYSTEM,
+            'template_code' => self::TEMPLATE_TASK_URGED,
+            'title' => $title,
+            'content' => $content,
+            'payload' => [
+                'type' => 'task_urged',
+                'task_id' => $task['id'] ?? null,
+                'task_title' => $task['title'] ?? null,
+                'task_type' => $task['type'] ?? null,
+                'order_id' => $task['order_id'] ?? null,
+                'urged_by_id' => $urgedById,
                 'due_at' => $task['due_at'] ?? null,
             ],
         ]);

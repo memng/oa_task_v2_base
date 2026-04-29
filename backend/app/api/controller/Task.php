@@ -380,6 +380,57 @@ class Task extends ApiController
         return $this->read($taskId);
     }
 
+    public function urge($id)
+    {
+        $taskId = (int)$id;
+        $user = $this->user();
+        $taskRow = Db::table('tasks')->alias('t')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->field([
+                't.*',
+                'o.initiator_id as order_initiator_id',
+                'o.sales_owner_id as order_sales_owner_id',
+            ])
+            ->where('t.id', $taskId)
+            ->find();
+        if (!$taskRow) {
+            $this->errorResponse('任务不存在', 404);
+        }
+
+        $canUrge = $this->canUrgeTask($taskRow, $user);
+        if (!$canUrge) {
+            $this->errorResponse('暂无权限催办该任务', 403);
+        }
+
+        $result = $this->taskService->urgeTask($taskId, $user['id']);
+        if (!$result['success']) {
+            $this->errorResponse($result['message']);
+        }
+
+        return $this->success([], $result['message']);
+    }
+
+    protected function canUrgeTask(array $taskRow, array $user): bool
+    {
+        if (\user_belongs_to_admin_dept($user)) {
+            return true;
+        }
+        $userId = (int)$user['id'];
+        $assigneeId = (int)($taskRow['assigned_to'] ?? 0);
+        if ($assigneeId === $userId) {
+            return false;
+        }
+        if ((int)$taskRow['created_by'] === $userId) {
+            return true;
+        }
+        if (!empty($taskRow['order_id'])) {
+            if ((int)($taskRow['order_initiator_id'] ?? 0) === $userId || (int)($taskRow['order_sales_owner_id'] ?? 0) === $userId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function read($id)
     {
         $user = $this->user();

@@ -418,4 +418,34 @@ class TaskService
             return $task;
         }, $rows);
     }
+
+    public function urgeTask(int $taskId, int $operatorId): array
+    {
+        $task = Db::table('tasks')->where('id', $taskId)->find();
+        if (!$task) {
+            return ['success' => false, 'message' => '任务不存在'];
+        }
+
+        if ((int)($task['status'] ?? '') === 'completed' || (int)($task['status'] ?? '') === 'cancelled') {
+            return ['success' => false, 'message' => '已完成或已取消的任务无法催办'];
+        }
+
+        $assignedTo = (int)($task['assigned_to'] ?? 0);
+        if ($assignedTo <= 0) {
+            return ['success' => false, 'message' => '该任务尚未分配负责人，无法催办'];
+        }
+
+        $taskData = [
+            'id' => $taskId,
+            'type' => $task['type'],
+            'title' => $task['title'],
+            'order_id' => $task['order_id'] ?? null,
+            'due_at' => $task['due_at'] ?? null,
+        ];
+
+        $this->notificationService->sendTaskUrged($assignedTo, $taskData, $operatorId);
+        $this->addLog($taskId, $operatorId, 'urged', $task['title']);
+
+        return ['success' => true, 'message' => '催办成功'];
+    }
 }
