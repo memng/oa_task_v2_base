@@ -48,72 +48,14 @@ class AnnouncementStats extends AdminApiController
 
         $readUsers = Db::table('announcement_reads')
             ->whereIn('announcement_id', $announcementIds)
-            ->distinct('user_id')
-            ->count('user_id');
+            ->distinct(true)
+            ->field('user_id')
+            ->count();
 
         $unreadUsers = $totalUsers - $readUsers;
         $readRate = $totalUsers > 0 ? round($readUsers / $totalUsers * 100, 2) : 0;
 
-        $deptStats = Db::table('users')
-            ->alias('u')
-            ->leftJoin('departments d', 'd.id = u.dept_id')
-            ->leftJoin('announcement_reads ar', function ($join) use ($announcementIdStr) {
-                $join->on('ar.user_id = u.id')
-                    ->whereRaw("ar.announcement_id IN ({$announcementIdStr})");
-            })
-            ->where('u.status', 'active')
-            ->field([
-                'd.id as dept_id',
-                'd.name as dept_name',
-                'COUNT(DISTINCT u.id) as total_users',
-                'COUNT(DISTINCT ar.user_id) as read_users',
-            ])
-            ->group('d.id', 'd.name')
-            ->order('d.sort_order', 'asc')
-            ->select()
-            ->toArray();
-
-        $byDepartment = array_map(function ($row) {
-            $unread = $row['total_users'] - $row['read_users'];
-            return [
-                'dept_id' => $row['dept_id'] ? (int)$row['dept_id'] : null,
-                'dept_name' => $row['dept_name'] ?: '未分配部门',
-                'total_users' => (int)$row['total_users'],
-                'read_users' => (int)$row['read_users'],
-                'unread_users' => $unread,
-                'read_rate' => $row['total_users'] > 0 
-                    ? round($row['read_users'] / $row['total_users'] * 100, 2) 
-                    : 0,
-            ];
-        }, $deptStats);
-
-        $noDeptTotal = Db::table('users')
-            ->where('status', 'active')
-            ->whereNull('dept_id')
-            ->count();
-
-        if ($noDeptTotal > 0) {
-            $noDeptRead = Db::table('users')
-                ->alias('u')
-                ->leftJoin('announcement_reads ar', function ($join) use ($announcementIds) {
-                    $join->on('ar.user_id = u.id')
-                        ->whereIn('ar.announcement_id', $announcementIds);
-                })
-                ->where('u.status', 'active')
-                ->whereNull('u.dept_id')
-                ->count('ar.id');
-
-            $byDepartment[] = [
-                'dept_id' => null,
-                'dept_name' => '未分配部门',
-                'total_users' => $noDeptTotal,
-                'read_users' => $noDeptRead,
-                'unread_users' => $noDeptTotal - $noDeptRead,
-                'read_rate' => $noDeptTotal > 0 
-                    ? round($noDeptRead / $noDeptTotal * 100, 2) 
-                    : 0,
-            ];
-        }
+        $deptStats = $this->getDeptStats($announcementIds);
 
         return $this->success([
             'total_users' => $totalUsers,
@@ -121,7 +63,7 @@ class AnnouncementStats extends AdminApiController
             'unread_users' => $unreadUsers,
             'read_rate' => $readRate,
             'total_announcements' => count($announcements),
-            'by_department' => $byDepartment,
+            'by_department' => $deptStats,
             'announcements' => array_map(function ($a) {
                 return [
                     'id' => (int)$a['id'],
@@ -187,6 +129,7 @@ class AnnouncementStats extends AdminApiController
                 'read_rate' => $totalActiveUsers > 0 
                     ? round($readCount / $totalActiveUsers * 100, 2) 
                     : 0,
+                'total_users' => $totalActiveUsers,
             ];
         }, $items);
 
@@ -214,44 +157,14 @@ class AnnouncementStats extends AdminApiController
 
         $readUsers = Db::table('announcement_reads')
             ->where('announcement_id', (int)$id)
-            ->distinct('user_id')
-            ->count('user_id');
+            ->distinct(true)
+            ->field('user_id')
+            ->count();
 
         $unreadUsers = $totalActiveUsers - $readUsers;
         $readRate = $totalActiveUsers > 0 ? round($readUsers / $totalActiveUsers * 100, 2) : 0;
 
-        $deptStats = Db::table('users')
-            ->alias('u')
-            ->leftJoin('departments d', 'd.id = u.dept_id')
-            ->leftJoin('announcement_reads ar', function ($join) use ($id) {
-                $join->on('ar.user_id = u.id')
-                    ->where('ar.announcement_id', (int)$id);
-            })
-            ->where('u.status', 'active')
-            ->field([
-                'd.id as dept_id',
-                'd.name as dept_name',
-                'COUNT(DISTINCT u.id) as total_users',
-                'COUNT(DISTINCT ar.user_id) as read_users',
-            ])
-            ->group('d.id', 'd.name')
-            ->order('d.sort_order', 'asc')
-            ->select()
-            ->toArray();
-
-        $byDepartment = array_map(function ($row) {
-            $unread = $row['total_users'] - $row['read_users'];
-            return [
-                'dept_id' => $row['dept_id'] ? (int)$row['dept_id'] : null,
-                'dept_name' => $row['dept_name'] ?: '未分配部门',
-                'total_users' => (int)$row['total_users'],
-                'read_users' => (int)$row['read_users'],
-                'unread_users' => $unread,
-                'read_rate' => $row['total_users'] > 0 
-                    ? round($row['read_users'] / $row['total_users'] * 100, 2) 
-                    : 0,
-            ];
-        }, $deptStats);
+        $deptStats = $this->getDeptStats([(int)$id]);
 
         $readUsersList = Db::table('announcement_reads')
             ->alias('ar')
@@ -268,20 +181,25 @@ class AnnouncementStats extends AdminApiController
             ->select()
             ->toArray();
 
-        $unreadUsersList = Db::table('users')
+        $readUserIds = Db::table('announcement_reads')
+            ->where('announcement_id', (int)$id)
+            ->column('user_id');
+
+        $unreadUsersQuery = Db::table('users')
             ->alias('u')
             ->leftJoin('departments d', 'd.id = u.dept_id')
-            ->whereNotExists(function ($query) use ($id) {
-                $query->table('announcement_reads')
-                    ->whereColumn('user_id', 'u.id')
-                    ->where('announcement_id', (int)$id);
-            })
             ->where('u.status', 'active')
             ->field([
                 'u.id as user_id',
                 'u.name as user_name',
                 'd.name as dept_name',
-            ])
+            ]);
+
+        if (!empty($readUserIds)) {
+            $unreadUsersQuery->whereNotIn('u.id', $readUserIds);
+        }
+
+        $unreadUsersList = $unreadUsersQuery
             ->order('u.id', 'asc')
             ->select()
             ->toArray();
@@ -302,7 +220,7 @@ class AnnouncementStats extends AdminApiController
                 'unread_users' => $unreadUsers,
                 'read_rate' => $readRate,
             ],
-            'by_department' => $byDepartment,
+            'by_department' => $deptStats,
             'read_users' => array_map(function ($row) {
                 return [
                     'user_id' => (int)$row['user_id'],
@@ -319,5 +237,50 @@ class AnnouncementStats extends AdminApiController
                 ];
             }, $unreadUsersList),
         ]);
+    }
+
+    protected function getDeptStats(array $announcementIds): array
+    {
+        if (empty($announcementIds)) {
+            return [];
+        }
+
+        $announcementIdStr = implode(',', array_map('intval', $announcementIds));
+
+        $sql = "SELECT 
+                    d.id as dept_id,
+                    d.name as dept_name,
+                    COUNT(DISTINCT u.id) as total_users,
+                    COUNT(DISTINCT ar.user_id) as read_users
+                FROM users u
+                LEFT JOIN departments d ON d.id = u.dept_id
+                LEFT JOIN announcement_reads ar ON ar.user_id = u.id AND ar.announcement_id IN ({$announcementIdStr})
+                WHERE u.status = 'active'
+                GROUP BY d.id, d.name
+                ORDER BY d.sort_order ASC";
+
+        $deptStats = Db::query($sql);
+
+        $result = [];
+        $hasNoDept = false;
+
+        foreach ($deptStats as $row) {
+            $unread = $row['total_users'] - $row['read_users'];
+            if ($row['dept_id'] === null) {
+                $hasNoDept = true;
+            }
+            $result[] = [
+                'dept_id' => $row['dept_id'] ? (int)$row['dept_id'] : null,
+                'dept_name' => $row['dept_name'] ?: '未分配部门',
+                'total_users' => (int)$row['total_users'],
+                'read_users' => (int)$row['read_users'],
+                'unread_users' => $unread,
+                'read_rate' => $row['total_users'] > 0 
+                    ? round($row['read_users'] / $row['total_users'] * 100, 2) 
+                    : 0,
+            ];
+        }
+
+        return $result;
     }
 }
