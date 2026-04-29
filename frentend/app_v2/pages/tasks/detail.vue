@@ -65,6 +65,7 @@
       </view>
       <view class="actions">
         <button class="outline" @click="openChat">沟通</button>
+        <button v-if="canUrgeTask" class="primary" :loading="urgingTask" @click="urgeTask">催办一次</button>
       </view>
     </view>
 
@@ -338,6 +339,7 @@ const uploadingAttachment = ref(false)
 const staffMap = ref({})
 const auditComment = ref('')
 const auditProcessing = ref(false)
+const urgingTask = ref(false)
 const profile = computed(() => store.state.profile || {})
 const isAdminDept = computed(() => {
   const type = profile.value?.dept?.type
@@ -350,7 +352,8 @@ const logActionMap = {
   assign: '分配',
   comment: '备注',
   status: '状态',
-  procurement: '采购更新'
+  procurement: '采购更新',
+  urged: '催办'
 }
 const logFieldMap = {
   assigned_to: '负责人',
@@ -432,6 +435,20 @@ const canProcessTask = computed(() => {
 const showAuditPanel = computed(
   () => isAdminDept.value && task.value?.need_audit && task.value?.status === 'waiting_audit'
 )
+const canUrgeTask = computed(() => {
+  if (!task.value || !profile.value?.id) return false
+  const assigneeId = task.value.assigned_to ? Number(task.value.assigned_to) : null
+  const userId = Number(profile.value.id)
+  
+  if (assigneeId === userId) return false
+  if (task.value.status === 'completed' || task.value.status === 'cancelled') return false
+  if (!assigneeId) return false
+  
+  if (isAdminDept.value) return true
+  if (Number(task.value.created_by) === userId) return true
+  
+  return false
+})
 const normalizeModuleKey = (label = '', index = 0) => {
   const key = String(label || '')
     .toLowerCase()
@@ -1240,6 +1257,20 @@ const openChat = () => {
 const openOrderDetail = () => {
   if (!task.value?.order?.id) return
   uni.navigateTo({ url: `/pages/order/detail?id=${task.value.order.id}` })
+}
+
+const urgeTask = async () => {
+  if (!task.value?.id || urgingTask.value) return
+  urgingTask.value = true
+  try {
+    await api.urgeTask(task.value.id)
+    uni.showToast({ title: '催办成功', icon: 'success' })
+    await fetchTaskDetail(taskId.value)
+  } catch (error) {
+    console.error(error)
+  } finally {
+    urgingTask.value = false
+  }
 }
 </script>
 

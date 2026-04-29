@@ -230,6 +230,9 @@ export const api = {
   updateProcurementTask(id, payload) {
     return request({ url: `/tasks/${id}/procurement`, method: 'POST', data: payload })
   },
+  urgeTask(id) {
+    return request({ url: `/tasks/${id}/urge`, method: 'POST' })
+  },
   announcements(params = {}) {
     return request({ url: '/announcements', data: params })
   },
