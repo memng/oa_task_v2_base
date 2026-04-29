@@ -48,9 +48,7 @@ class AnnouncementStats extends AdminApiController
 
         $readUsers = Db::table('announcement_reads')
             ->whereIn('announcement_id', $announcementIds)
-            ->distinct(true)
-            ->field('user_id')
-            ->count();
+            ->count('DISTINCT user_id');
 
         $unreadUsers = $totalUsers - $readUsers;
         $readRate = $totalUsers > 0 ? round($readUsers / $totalUsers * 100, 2) : 0;
@@ -157,9 +155,7 @@ class AnnouncementStats extends AdminApiController
 
         $readUsers = Db::table('announcement_reads')
             ->where('announcement_id', (int)$id)
-            ->distinct(true)
-            ->field('user_id')
-            ->count();
+            ->count('DISTINCT user_id');
 
         $unreadUsers = $totalActiveUsers - $readUsers;
         $readRate = $totalActiveUsers > 0 ? round($readUsers / $totalActiveUsers * 100, 2) : 0;
