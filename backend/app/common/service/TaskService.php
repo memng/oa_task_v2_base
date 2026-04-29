@@ -426,7 +426,7 @@ class TaskService
             return ['success' => false, 'message' => '任务不存在'];
         }
 
-        if ((int)($task['status'] ?? '') === 'completed' || (int)($task['status'] ?? '') === 'cancelled') {
+        if (($task['status'] ?? '') === 'completed' || ($task['status'] ?? '') === 'cancelled') {
             return ['success' => false, 'message' => '已完成或已取消的任务无法催办'];
         }
 
