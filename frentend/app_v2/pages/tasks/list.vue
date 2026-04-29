@@ -71,6 +71,7 @@ const statusMap = {
 const pageTitle = computed(() => {
   if (mode.value === 'factory') return '工厂订单任务'
   if (mode.value === 'temporary') return '临时任务'
+  if (mode.value === 'initiated') return '我发起的任务'
   if (mode.value === 'review') return '审核任务'
   return orderPi.value ? `订单 ${orderPi.value}` : '订单任务'
 })
@@ -78,6 +79,7 @@ const pageTitle = computed(() => {
 const pageDesc = computed(() => {
   if (mode.value === 'factory') return '与你相关的工厂订单任务'
   if (mode.value === 'temporary') return '分配给你的临时任务'
+  if (mode.value === 'initiated') return '你创建的全部任务'
   if (mode.value === 'review') return '待审核的任务列表'
   return orderPi.value ? `该订单下的任务（${orderPi.value}）` : '与你相关的订单任务'
 })
@@ -108,6 +110,8 @@ const buildParams = () => {
   if (mode.value === 'review') {
     params.scope = 'review'
     params.status = 'waiting_audit'
+  } else if (mode.value === 'initiated') {
+    params.scope = 'initiated'
   } else {
     params.scope = 'assigned'
   }
