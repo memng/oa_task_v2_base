@@ -179,5 +179,14 @@ export const api = {
   },
   deleteShiftSchedule(id) {
     return client.delete(`/admin/shift-schedules/${id}`)
+  },
+  announcementStatsSummary(params = {}) {
+    return client.get('/admin/announcement-stats/summary', { params })
+  },
+  announcementStatsList(params = {}) {
+    return client.get('/admin/announcement-stats/list', { params })
+  },
+  announcementStatsDetail(id) {
+    return client.get(`/admin/announcement-stats/${id}`)
   }
 }

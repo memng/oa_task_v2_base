@@ -13,6 +13,7 @@
           <el-menu-item index="/order-settings/voltages">电压管理</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/announcements">公告</el-menu-item>
+        <el-menu-item index="/announcement-stats">公告已读统计</el-menu-item>
         <el-menu-item index="/departments">部门管理</el-menu-item>
         <el-menu-item index="/shift-schedules">班次设置</el-menu-item>
         <el-menu-item index="/suppliers">供应商</el-menu-item>
