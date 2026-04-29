@@ -202,9 +202,21 @@
       }
     },
     {
+      "path": "pages/finance/reimburse-detail",
+      "style": {
+        "navigationBarTitleText": "报销详情"
+      }
+    },
+    {
       "path": "pages/leave/index",
       "style": {
         "navigationBarTitleText": "请假申请"
+      }
+    },
+    {
+      "path": "pages/leave/detail",
+      "style": {
+        "navigationBarTitleText": "请假详情"
       }
     }
   ],
