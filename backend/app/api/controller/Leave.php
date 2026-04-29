@@ -242,6 +242,72 @@ class Leave extends ApiController
         }
     }
 
+    public function read($id)
+    {
+        $userId = $this->user()['id'];
+        
+        $leaveRequest = Db::table('leave_requests')
+            ->where('id', (int)$id)
+            ->find();
+
+        if (!$leaveRequest) {
+            $this->errorResponse('请假申请不存在', 404);
+        }
+
+        if ($leaveRequest['user_id'] != $userId) {
+            $this->errorResponse('无权限查看该请假申请', 403);
+        }
+
+        $typeMap = [
+            'annual' => '年假',
+            'sick' => '病假',
+            'personal' => '事假',
+            'other' => '其他'
+        ];
+
+        $statusMap = [
+            'pending' => '审批中',
+            'approved' => '已通过',
+            'rejected' => '已拒绝',
+            'cancelled' => '已撤销'
+        ];
+
+        $audits = Db::table('leave_request_audits')
+            ->where('leave_request_id', (int)$id)
+            ->order('created_at', 'desc')
+            ->select()
+            ->toArray();
+
+        $approverName = null;
+        if ($leaveRequest['approver_id']) {
+            $approver = Db::table('users')
+                ->where('id', (int)$leaveRequest['approver_id'])
+                ->field('name, nickname')
+                ->find();
+            if ($approver) {
+                $approverName = $approver['name'] ?: $approver['nickname'];
+            }
+        }
+
+        return $this->success([
+            'id' => (int)$leaveRequest['id'],
+            'user_id' => (int)$leaveRequest['user_id'],
+            'leave_type' => $leaveRequest['leave_type'],
+            'leave_type_label' => $typeMap[$leaveRequest['leave_type']] ?? '其他',
+            'start_at' => $leaveRequest['start_at'],
+            'end_at' => $leaveRequest['end_at'],
+            'duration_hours' => (float)$leaveRequest['duration_hours'],
+            'reason' => $leaveRequest['reason'],
+            'status' => $leaveRequest['status'],
+            'status_label' => $statusMap[$leaveRequest['status']] ?? '未知',
+            'approver_id' => $leaveRequest['approver_id'] ? (int)$leaveRequest['approver_id'] : null,
+            'approver_name' => $approverName,
+            'approved_at' => $leaveRequest['approved_at'],
+            'created_at' => $leaveRequest['created_at'],
+            'audits' => $audits
+        ]);
+    }
+
     private function logAudit($leaveRequestId, $action, $fromStatus, $toStatus, $operatorId, $reason = null)
     {
         Db::table('leave_request_audits')->insert([

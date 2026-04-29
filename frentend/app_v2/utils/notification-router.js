@@ -55,14 +55,14 @@ export function getPageUrlByNotification(notification) {
     case NOTIFICATION_TYPES.LEAVE_APPROVED:
     case NOTIFICATION_TYPES.LEAVE_REJECTED:
       if (payload.leave_id) {
-        return `/pages/leave/index?id=${payload.leave_id}`
+        return `/pages/leave/detail?id=${payload.leave_id}`
       }
       return '/pages/leave/index'
 
     case NOTIFICATION_TYPES.REIMBURSE_APPROVED:
     case NOTIFICATION_TYPES.REIMBURSE_REJECTED:
       if (payload.reimburse_id) {
-        return `/pages/finance/reimburse?id=${payload.reimburse_id}`
+        return `/pages/finance/reimburse-detail?id=${payload.reimburse_id}`
       }
       return '/pages/finance/reimburse'
 

@@ -25,6 +25,7 @@ Route::group('api', function () {
     Route::get('lookups/staff', '\app\api\controller\Lookup@staff');
     Route::get('lookups', '\app\api\controller\Lookup@enums');
     Route::get('suppliers', '\app\api\controller\Supplier@index');
+    Route::get('reimburse/:id', '\app\api\controller\Reimburse@read');
     Route::get('reimburse', '\app\api\controller\Reimburse@index');
     Route::post('reimburse', '\app\api\controller\Reimburse@save');
 
@@ -83,6 +84,7 @@ Route::group('api', function () {
 
     Route::post('leave/:id/approve', '\app\api\controller\Leave@approve');
     Route::post('leave/:id/cancel', '\app\api\controller\Leave@cancel');
+    Route::get('leave/:id', '\app\api\controller\Leave@read');
     Route::get('leave', '\app\api\controller\Leave@index');
     Route::post('leave', '\app\api\controller\Leave@save');
 

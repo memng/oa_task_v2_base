@@ -152,11 +152,17 @@ export const api = {
   reimburseList(params = {}) {
     return request({ url: '/reimburse', data: params })
   },
+  reimburseDetail(id) {
+    return request({ url: `/reimburse/${id}` })
+  },
   createReimburse(payload) {
     return request({ url: '/reimburse', method: 'POST', data: payload })
   },
   leaveList(params = {}) {
     return request({ url: '/leave', data: params })
+  },
+  leaveDetail(id) {
+    return request({ url: `/leave/${id}` })
   },
   createLeave(payload) {
     return request({ url: '/leave', method: 'POST', data: payload })

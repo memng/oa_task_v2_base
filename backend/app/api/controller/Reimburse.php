@@ -222,4 +222,72 @@ class Reimburse extends ApiController
         $this->mediaCache[$mediaId] = $result;
         return $result;
     }
+
+    public function read($id)
+    {
+        $userId = $this->user()['id'];
+        
+        $report = Db::table('expense_reports')
+            ->where('id', (int)$id)
+            ->find();
+
+        if (!$report) {
+            $this->errorResponse('报销申请不存在', 404);
+        }
+
+        if ($report['user_id'] != $userId) {
+            $this->errorResponse('无权限查看该报销申请', 403);
+        }
+
+        $typeMap = [
+            'travel' => '差旅费',
+            'meal' => '餐费',
+            'transport' => '交通费',
+            'office' => '办公用品',
+            'other' => '其他'
+        ];
+
+        $statusMap = [
+            'pending' => '审批中',
+            'approved' => '已通过',
+            'rejected' => '已拒绝'
+        ];
+
+        $approverName = null;
+        if ($report['approver_id']) {
+            $approver = Db::table('users')
+                ->where('id', (int)$report['approver_id'])
+                ->field('name, nickname')
+                ->find();
+            if ($approver) {
+                $approverName = $approver['name'] ?: $approver['nickname'];
+            }
+        }
+
+        $mediaIds = $this->extractReceiptMediaIds($report);
+        $receipts = [];
+        foreach ($mediaIds as $mediaId) {
+            $media = $this->fetchMedia($mediaId);
+            if ($media) {
+                $receipts[] = $media;
+            }
+        }
+
+        return $this->success([
+            'id' => (int)$report['id'],
+            'user_id' => (int)$report['user_id'],
+            'type' => $report['type'],
+            'type_label' => $typeMap[$report['type']] ?? '其他',
+            'amount' => (float)$report['amount'],
+            'remark' => $report['remark'],
+            'status' => $report['status'],
+            'status_label' => $statusMap[$report['status']] ?? '未知',
+            'approver_id' => $report['approver_id'] ? (int)$report['approver_id'] : null,
+            'approver_name' => $approverName,
+            'approved_at' => $report['approved_at'],
+            'created_at' => $report['created_at'],
+            'receipt_media_ids' => $mediaIds,
+            'receipts' => $receipts
+        ]);
+    }
 }
