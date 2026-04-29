@@ -8,17 +8,23 @@
       <view class="filter">{{ currentFilter.label }}</view>
     </picker>
 
-    <view class="notice-card" v-for="item in list" :key="item.id">
+    <view class="notice-card" v-for="item in list" :key="item.id" @click="openNotification(item)">
       <view class="notice-top">
         <view>
-          <view class="title">{{ item.title }}</view>
+          <view class="title">
+            {{ item.title }}
+            <view v-if="!item.is_read" class="dot"></view>
+          </view>
           <view class="desc">{{ item.content }}</view>
         </view>
-        <view class="time">{{ item.published_at }}</view>
+        <view class="time">{{ item.created_at }}</view>
       </view>
-      <view class="actions">
-        <text class="link">查看任务详情</text>
-        <text class="status">{{ item.status_label || '未读' }}</text>
+      <view class="actions" v-if="canNavigate(item)">
+        <text class="link">{{ getActionLabel(item) }}</text>
+        <text class="status">{{ item.is_read ? '已读' : '未读' }}</text>
+      </view>
+      <view class="actions" v-else>
+        <text class="status">{{ item.is_read ? '已读' : '未读' }}</text>
       </view>
     </view>
     <view v-if="!list.length" class="empty">暂无通知</view>
@@ -26,32 +32,61 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../utils/request'
+import {
+  navigateToDetail,
+  canNavigateToDetail,
+  getActionLabelByNotification
+} from '../../utils/notification-router'
+import { refreshMessageSummary } from '../../utils/message-center'
 
 const keyword = ref('')
 const list = ref([])
 const filters = [
-  { label: '全部通知', value: '' },
-  { label: '系统通知', value: 'system' },
-  { label: '任务通知', value: 'task' },
-  { label: '通用通知', value: 'general' }
+  { label: '全部通知', value: 'all' },
+  { label: '未读通知', value: 'unread' }
 ]
 const currentFilter = ref(filters[0])
 
 const fetchList = async () => {
   const params = { keyword: keyword.value }
-  if (currentFilter.value.value) {
-    params.category = currentFilter.value.value
+  if (currentFilter.value.value === 'unread') {
+    params.status = 'unread'
   }
-  const res = await api.announcements(params)
+  const res = await api.notifications(params)
   list.value = res.items || []
 }
 
 const onFilterChange = (e) => {
   currentFilter.value = filters[e.detail.value]
   fetchList()
+}
+
+const canNavigate = (item) => {
+  return canNavigateToDetail(item)
+}
+
+const getActionLabel = (item) => {
+  return getActionLabelByNotification(item)
+}
+
+const openNotification = async (item) => {
+  if (!item.is_read) {
+    await api.notificationMarkRead(item.id)
+    item.is_read = true
+    refreshMessageSummary()
+  }
+  if (canNavigateToDetail(item)) {
+    navigateToDetail(item)
+  } else {
+    uni.showModal({
+      title: item.title,
+      content: item.content || '暂无详情',
+      showCancel: false
+    })
+  }
 }
 
 onShow(fetchList)
@@ -98,6 +133,15 @@ onShow(fetchList)
 .title {
   font-size: 30rpx;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+.dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #ff4d4f;
 }
 .desc {
   font-size: 24rpx;
@@ -112,6 +156,7 @@ onShow(fetchList)
   margin-top: 16rpx;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 24rpx;
 }
 .link {

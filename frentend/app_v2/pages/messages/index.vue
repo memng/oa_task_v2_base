@@ -129,6 +129,11 @@ import { onShow } from '@dcloudio/uni-app'
 import store from '../../store'
 import { api } from '../../utils/request'
 import { refreshMessageSummary } from '../../utils/message-center'
+import {
+  navigateToDetail,
+  canNavigateToDetail,
+  getActionLabelByNotification
+} from '../../utils/notification-router'
 
 const keyword = ref('')
 const personalNotifications = ref([])
@@ -198,16 +203,27 @@ const openNotification = async (item, type) => {
       item.is_read = true
       refreshMessageSummary()
     }
-  } else if (!item.is_read) {
-    await api.notificationMarkRead(item.id)
-    item.is_read = true
-    refreshMessageSummary()
+    uni.showModal({
+      title: item.title,
+      content: item.content || '暂无详情',
+      showCancel: false
+    })
+  } else {
+    if (!item.is_read) {
+      await api.notificationMarkRead(item.id)
+      item.is_read = true
+      refreshMessageSummary()
+    }
+    if (canNavigateToDetail(item)) {
+      navigateToDetail(item)
+    } else {
+      uni.showModal({
+        title: item.title,
+        content: item.content || '暂无详情',
+        showCancel: false
+      })
+    }
   }
-  uni.showModal({
-    title: item.title,
-    content: item.content || '暂无详情',
-    showCancel: false
-  })
 }
 
 const openSelector = (mode) => {
