@@ -1,5 +1,38 @@
 <template>
   <scroll-view scroll-y class="page" @scrolltolower="loadMore">
+    <view v-if="detailItem" class="card detail-card">
+      <view class="detail-header">
+        <view class="detail-title">报销详情</view>
+        <text class="close-btn" @click="closeDetail">×</text>
+      </view>
+      <view class="detail-content">
+        <view class="detail-item">
+          <text class="detail-label">报销类型</text>
+          <text class="detail-value">{{ getTypeLabel(detailItem.type) }}</text>
+        </view>
+        <view class="detail-item">
+          <text class="detail-label">审批状态</text>
+          <text :class="['detail-value', 'status', detailItem.status]">{{ getStatusLabel(detailItem.status) }}</text>
+        </view>
+        <view class="detail-item">
+          <text class="detail-label">报销金额</text>
+          <text class="detail-value amount">¥{{ detailItem.amount.toFixed(2) }}</text>
+        </view>
+        <view class="detail-item">
+          <text class="detail-label">提交时间</text>
+          <text class="detail-value">{{ formatDate(detailItem.created_at) }}</text>
+        </view>
+        <view class="detail-item" v-if="detailItem.approved_at">
+          <text class="detail-label">审批时间</text>
+          <text class="detail-value">{{ formatDate(detailItem.approved_at) }}</text>
+        </view>
+        <view class="detail-item" v-if="detailItem.remark">
+          <text class="detail-label">备注</text>
+          <text class="detail-value remark-text">{{ detailItem.remark }}</text>
+        </view>
+      </view>
+    </view>
+
     <view class="card">
       <view class="section-title">报销信息</view>
       <view class="form-item">
@@ -92,7 +125,7 @@
       </view>
     </view>
 
-    <view class="reimburse-card" v-for="item in list" :key="item.id">
+    <view class="reimburse-card" v-for="item in list" :key="item.id" @click="viewDetail(item)">
       <view class="card-header">
         <view class="type-badge" :class="item.type">{{ getTypeLabel(item.type) }}</view>
         <view class="status-badge" :class="item.status">{{ getStatusLabel(item.status) }}</view>
@@ -122,7 +155,7 @@
             v-for="(receipt, idx) in item.receipts" 
             :key="idx"
             class="attachment-item" 
-            @click="viewAttachment(receipt)"
+            @click.stop="viewAttachment(receipt)"
           >
             <view class="attachment-icon">
               <image 
@@ -142,7 +175,7 @@
       </view>
 
       <view class="card-footer" v-else-if="item.receipt_url">
-        <view class="attachment-section" @click="viewAttachment({ url: item.receipt_url, file_name: item.receipt_name })">
+        <view class="attachment-section" @click.stop="viewAttachment({ url: item.receipt_url, file_name: item.receipt_name })">
           <view class="attachment-icon">
             <uni-icons type="document" size="36" color="#1677ff" />
           </view>
@@ -205,6 +238,7 @@ const loadingMore = ref(false)
 const hasMore = ref(true)
 const page = ref(1)
 const pageSize = 2
+const detailItem = ref(null)
 
 const filterTypeOptions = [
   { label: '全部类型', value: '' },
@@ -551,8 +585,58 @@ const viewAttachment = (receipt) => {
   }
 }
 
+const viewDetail = (item) => {
+  detailItem.value = item
+}
+
+const closeDetail = () => {
+  detailItem.value = null
+}
+
+const getUrlParams = () => {
+  const pages = getCurrentPages()
+  const currentPage = pages[pages.length - 1]
+  const options = currentPage.options || {}
+  return options
+}
+
+const findAndShowDetailById = async (id) => {
+  if (!id) return
+  const intId = parseInt(id, 10)
+  if (Number.isNaN(intId)) return
+
+  let found = list.value.find((item) => item.id === intId)
+  if (found) {
+    detailItem.value = found
+    return
+  }
+
+  try {
+    const params = {
+      page: 1,
+      pageSize: 100
+    }
+    const res = await api.reimburseList(params)
+    const items = res.items || []
+    found = items.find((item) => item.id === intId)
+    if (found) {
+      detailItem.value = found
+    }
+  } catch (error) {
+    console.error('获取报销详情失败:', error)
+  }
+}
+
 onShow(() => {
+  detailItem.value = null
   fetchList(true)
+
+  const params = getUrlParams()
+  if (params.id) {
+    setTimeout(() => {
+      findAndShowDetailById(params.id)
+    }, 500)
+  }
 })
 </script>
 
@@ -941,5 +1025,89 @@ textarea {
   margin-top: 20rpx;
   font-size: 26rpx;
   color: #999;
+}
+
+.detail-card {
+  border: 2rpx solid #1677ff;
+  background: #f0f7ff;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+  padding-bottom: 16rpx;
+  border-bottom: 1rpx solid #d6e4ff;
+}
+
+.detail-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1677ff;
+}
+
+.close-btn {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  color: #999;
+  background: #fff;
+  border-radius: 50%;
+}
+
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.detail-label {
+  font-size: 26rpx;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.detail-value {
+  font-size: 26rpx;
+  color: #333;
+  text-align: right;
+  max-width: 60%;
+  word-break: break-all;
+}
+
+.detail-value.amount {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #ff4d4f;
+}
+
+.detail-value.remark-text {
+  line-height: 1.6;
+}
+
+.detail-value.status {
+  font-size: 24rpx;
+}
+
+.detail-value.status.pending {
+  color: #fa8c16;
+}
+
+.detail-value.status.approved {
+  color: #52c41a;
+}
+
+.detail-value.status.rejected {
+  color: #ff4d4f;
 }
 </style>

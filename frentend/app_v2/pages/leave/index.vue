@@ -1,5 +1,42 @@
 <template>
   <scroll-view scroll-y class="page" @scrolltolower="onScrollToLower">
+    <view v-if="detailItem" class="card detail-card">
+      <view class="detail-header">
+        <view class="detail-title">请假详情</view>
+        <text class="close-btn" @click="closeDetail">×</text>
+      </view>
+      <view class="detail-content">
+        <view class="detail-item">
+          <text class="detail-label">请假类型</text>
+          <text class="detail-value">{{ formatType(detailItem.leave_type) }}</text>
+        </view>
+        <view class="detail-item">
+          <text class="detail-label">审批状态</text>
+          <text :class="['detail-value', 'status', detailItem.status]">{{ statusLabel(detailItem.status) }}</text>
+        </view>
+        <view class="detail-item">
+          <text class="detail-label">开始时间</text>
+          <text class="detail-value">{{ formatDateTime(detailItem.start_at) }}</text>
+        </view>
+        <view class="detail-item">
+          <text class="detail-label">结束时间</text>
+          <text class="detail-value">{{ formatDateTime(detailItem.end_at) }}</text>
+        </view>
+        <view class="detail-item">
+          <text class="detail-label">请假时长</text>
+          <text class="detail-value">{{ detailItem.duration_hours }} 小时</text>
+        </view>
+        <view class="detail-item" v-if="detailItem.reason">
+          <text class="detail-label">请假事由</text>
+          <text class="detail-value reason-text">{{ detailItem.reason }}</text>
+        </view>
+        <view class="detail-item" v-if="detailItem.approved_at">
+          <text class="detail-label">审批时间</text>
+          <text class="detail-value">{{ formatDateTime(detailItem.approved_at) }}</text>
+        </view>
+      </view>
+    </view>
+
     <view class="card">
       <view class="section-title">请假申请</view>
       <view class="form-item">
@@ -70,7 +107,7 @@
       </view>
       <view v-if="dateRangeError" class="error-tip">{{ dateRangeError }}</view>
       <view v-if="!requests.length && !loading && !dateRangeError" class="empty">暂无记录</view>
-      <view class="record" v-for="item in requests" :key="item.id">
+      <view class="record" v-for="item in requests" :key="item.id" @click="viewDetail(item)">
         <view class="record-row">
           <text>{{ formatType(item.leave_type) }}</text>
           <text :class="['status', item.status]">{{ statusLabel(item.status) }}</text>
@@ -81,7 +118,7 @@
         </view>
         <view class="reason">{{ item.reason || '无备注' }}</view>
         <view v-if="item.status === 'pending'" class="action-row">
-          <button class="action-btn cancel" @click="handleCancel(item)">撤回申请</button>
+          <button class="action-btn cancel" @click.stop="handleCancel(item)">撤回申请</button>
         </view>
       </view>
       <view v-if="loading" class="loading">加载中...</view>
@@ -131,6 +168,7 @@ const loading = ref(false)
 const hasMore = ref(true)
 const page = ref(1)
 const pageSize = ref(2)
+const detailItem = ref(null)
 
 const durationLabel = computed(() => {
   const hours = computeDuration()
@@ -352,12 +390,68 @@ const formatRange = (start, end) => {
   return `${start.slice(5, 16)} ~ ${end.slice(5, 16)}`
 }
 
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '-'
+  return dateStr.replace('T', ' ').substring(0, 16)
+}
+
+const viewDetail = (item) => {
+  detailItem.value = item
+}
+
+const closeDetail = () => {
+  detailItem.value = null
+}
+
+const getUrlParams = () => {
+  const pages = getCurrentPages()
+  const currentPage = pages[pages.length - 1]
+  const options = currentPage.options || {}
+  return options
+}
+
+const findAndShowDetailById = async (id) => {
+  if (!id) return
+  const intId = parseInt(id, 10)
+  if (Number.isNaN(intId)) return
+
+  let found = requests.value.find((item) => item.id === intId)
+  if (found) {
+    detailItem.value = found
+    return
+  }
+
+  try {
+    const params = {
+      page: 1,
+      page_size: 100
+    }
+    const res = await api.leaveList(params)
+    const items = res.items || []
+    found = items.find((item) => item.id === intId)
+    if (found) {
+      detailItem.value = found
+    }
+  } catch (error) {
+    console.error('获取请假详情失败:', error)
+  }
+}
+
 onShow(() => {
   filterStartDate.value = ''
   filterEndDate.value = ''
   currentStatus.value = statusOptions[0]
   dateRangeError.value = ''
+  detailItem.value = null
+  
   resetAndFetch()
+
+  const params = getUrlParams()
+  if (params.id) {
+    setTimeout(() => {
+      findAndShowDetailById(params.id)
+    }, 500)
+  }
 })
 </script>
 
@@ -512,5 +606,87 @@ textarea {
   color: #999;
   padding: 20rpx 0;
   font-size: 24rpx;
+}
+
+.detail-card {
+  border: 2rpx solid #1677ff;
+  background: #f0f7ff;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+  padding-bottom: 16rpx;
+  border-bottom: 1rpx solid #d6e4ff;
+}
+
+.detail-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1677ff;
+}
+
+.close-btn {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  color: #999;
+  background: #fff;
+  border-radius: 50%;
+}
+
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.detail-label {
+  font-size: 26rpx;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.detail-value {
+  font-size: 26rpx;
+  color: #333;
+  text-align: right;
+  max-width: 60%;
+  word-break: break-all;
+}
+
+.detail-value.reason-text {
+  line-height: 1.6;
+}
+
+.detail-value.status {
+  font-size: 24rpx;
+}
+
+.detail-value.status.pending {
+  color: #faad14;
+}
+
+.detail-value.status.approved {
+  color: #52c41a;
+}
+
+.detail-value.status.rejected {
+  color: #ff4d4f;
+}
+
+.detail-value.status.cancelled {
+  color: #999;
 }
 </style>
