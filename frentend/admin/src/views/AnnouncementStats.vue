@@ -88,7 +88,7 @@
           <template #default="{ row }">
             <span style="color: #67c23a;">{{ row.read_count || 0 }}</span>
             <span style="color: #999;">/</span>
-            <span>{{ summary.total_users || 0 }}</span>
+            <span>{{ row.total_users || summary.total_users || 0 }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="read_rate" label="已读率" width="180">
