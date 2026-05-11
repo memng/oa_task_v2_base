@@ -72,11 +72,6 @@ class Auth extends ApiController
             $this->errorResponse('选择的部门不存在或已停用');
         }
 
-        $exists = Db::table('users')->where('mobile', $mobile)->find();
-        if ($exists) {
-            $this->errorResponse('手机号已注册，请直接登录');
-        }
-
         $session = $this->fetchWeChatSession($code);
         $openid = $session['openid'] ?? '';
         $unionId = $session['unionid'] ?? null;
@@ -84,8 +79,19 @@ class Auth extends ApiController
             $this->errorResponse('微信授权失败，请重新绑定');
         }
 
+        $exists = Db::table('users')->where('mobile', $mobile)->find();
+        if ($exists) {
+            if ($exists['status'] === 'rejected') {
+                $this->errorResponse('账号已被驳回，请使用重新提交功能', 400, ['rejected' => true]);
+            }
+            $this->errorResponse('手机号已注册，请直接登录');
+        }
+
         $openUser = Db::table('users')->where('openid', $openid)->find();
         if ($openUser) {
+            if ($openUser['status'] === 'rejected') {
+                $this->errorResponse('该微信已绑定被驳回的账号，请使用重新提交功能', 400, ['rejected' => true]);
+            }
             $this->errorResponse('该微信已绑定其他账号');
         }
 
@@ -112,6 +118,135 @@ class Auth extends ApiController
         return $this->success([
             'pending' => true,
         ], '注册成功，请等待后台审核');
+    }
+
+    public function resubmitProfile()
+    {
+        $payload = $this->requestData();
+        $mobile = trim((string)($payload['mobile'] ?? ''));
+        $password = (string)($payload['password'] ?? '');
+        $confirm = (string)($payload['confirm_password'] ?? '');
+        $name = trim((string)($payload['name'] ?? ''));
+        $idCard = trim((string)($payload['id_card'] ?? ''));
+        $address = trim((string)($payload['address'] ?? ''));
+        $bankAccountName = trim((string)($payload['bank_account_name'] ?? ''));
+        $bankName = trim((string)($payload['bank_name'] ?? ''));
+        $bankCardNo = trim((string)($payload['bank_card_no'] ?? ''));
+        $deptId = (int)($payload['dept_id'] ?? 0);
+        $nickname = trim((string)($payload['nickname'] ?? ''));
+        $avatarUrl = (string)($payload['avatar_url'] ?? '');
+        $code = trim((string)($payload['code'] ?? ''));
+
+        if (!preg_match('/^1\\d{10}$/', $mobile)) {
+            $this->errorResponse('请输入正确的手机号');
+        }
+        if (empty($name) || empty($idCard) || empty($address) || empty($bankAccountName) || empty($bankName) || empty($bankCardNo)) {
+            $this->errorResponse('请完善资料信息');
+        }
+        if (empty($deptId)) {
+            $this->errorResponse('请选择部门');
+        }
+
+        $dept = Db::table('departments')
+            ->where('status', 1)
+            ->where('id', $deptId)
+            ->find();
+        if (!$dept) {
+            $this->errorResponse('选择的部门不存在或已停用');
+        }
+
+        $user = Db::table('users')->where('mobile', $mobile)->find();
+        if (!$user) {
+            $this->errorResponse('账号不存在，请先注册');
+        }
+        if ($user['status'] !== 'rejected') {
+            $this->errorResponse('只有被驳回的账号才能重新提交');
+        }
+
+        $openid = $user['openid'];
+        $unionId = $user['unionid'];
+        if (!empty($code)) {
+            $session = $this->fetchWeChatSession($code);
+            $newOpenid = $session['openid'] ?? '';
+            if (!empty($newOpenid)) {
+                $openid = $newOpenid;
+                $unionId = $session['unionid'] ?? $user['unionid'];
+                $otherUser = Db::table('users')->where('openid', $openid)->where('id', '<>', $user['id'])->find();
+                if ($otherUser) {
+                    $this->errorResponse('该微信已绑定其他账号');
+                }
+            }
+        }
+
+        $updates = [
+            'name'               => $name,
+            'nickname'           => $nickname ?: null,
+            'dept_id'            => $deptId,
+            'id_card'            => $idCard,
+            'address'            => $address,
+            'bank_account_name'  => $bankAccountName,
+            'bank_name'          => $bankName,
+            'bank_card_no'       => $bankCardNo,
+            'openid'             => $openid,
+            'unionid'            => $unionId,
+            'avatar_url'         => $avatarUrl ?: $user['avatar_url'],
+            'status'             => 'pending',
+            'reject_reason'      => null,
+            'updated_at'         => date('Y-m-d H:i:s'),
+        ];
+
+        if (!empty($password)) {
+            if (strlen($password) < 6) {
+                $this->errorResponse('密码至少6位');
+            }
+            if ($confirm !== '' && $confirm !== $password) {
+                $this->errorResponse('两次输入的密码不一致');
+            }
+            $updates['password'] = password_hash($password, PASSWORD_BCRYPT);
+        }
+
+        Db::table('users')->where('id', $user['id'])->update($updates);
+
+        return $this->success([
+            'pending' => true,
+        ], '重新提交成功，请等待后台审核');
+    }
+
+    public function rejectedInfo()
+    {
+        $payload = $this->requestData();
+        $mobile = trim((string)($payload['mobile'] ?? ''));
+
+        if (!preg_match('/^1\\d{10}$/', $mobile)) {
+            $this->errorResponse('请输入正确的手机号');
+        }
+
+        $user = Db::table('users')->where('mobile', $mobile)->find();
+        if (!$user) {
+            $this->errorResponse('账号不存在');
+        }
+        if ($user['status'] !== 'rejected') {
+            $this->errorResponse('该账号未被驳回');
+        }
+
+        $dept = Db::table('departments')->find($user['dept_id']) ?: [];
+        return $this->success([
+            'profile' => [
+                'id'                => (int)$user['id'],
+                'name'              => $user['name'],
+                'mobile'            => $user['mobile'],
+                'id_card'           => $user['id_card'],
+                'address'           => $user['address'],
+                'bank_account_name' => $user['bank_account_name'],
+                'bank_name'         => $user['bank_name'],
+                'bank_card_no'      => $user['bank_card_no'],
+                'dept_id'           => $user['dept_id'],
+                'dept_name'         => $dept ? $dept['name'] : null,
+                'nickname'          => $user['nickname'],
+                'avatar_url'        => $user['avatar_url'],
+            ],
+            'reject_reason' => isset($user['reject_reason']) ? $user['reject_reason'] : null,
+        ]);
     }
 
     protected function loginByPassword(array $payload): array
@@ -336,10 +471,19 @@ class Auth extends ApiController
         if ($status === 'pending') {
             $this->errorResponse('账号正在审核中，请耐心等待');
         }
+        if ($status === 'rejected') {
+            $rejectReason = trim((string)($user['reject_reason'] ?? ''));
+            $message = empty($rejectReason) ? '审核未通过，请修改资料后重新提交' : $rejectReason;
+            $this->errorResponse($message, 400, [
+                'rejected' => true,
+                'reject_reason' => $rejectReason ?: null,
+            ]);
+        }
         if ($status === 'disabled') {
             $rejectReason = trim((string)($user['reject_reason'] ?? ''));
-            $message = empty($rejectReason) ? '审核未通过，请联系管理员' : $rejectReason;
+            $message = empty($rejectReason) ? '账号已被禁用，请联系管理员' : $rejectReason;
             $this->errorResponse($message, 400, [
+                'disabled' => true,
                 'reject_reason' => $rejectReason ?: null,
             ]);
         }

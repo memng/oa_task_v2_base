@@ -33,6 +33,35 @@ class User extends AdminApiController
         ]);
     }
 
+    public function detail(int $id)
+    {
+        $user = Db::table('users')->find($id);
+        if (!$user) {
+            $this->errorResponse('用户不存在');
+        }
+
+        $dept = Db::table('departments')->find($user['dept_id']) ?: [];
+        return $this->success([
+            'item' => [
+                'id'                => (int)$user['id'],
+                'name'              => $user['name'],
+                'mobile'            => $user['mobile'],
+                'id_card'           => $user['id_card'],
+                'address'           => $user['address'],
+                'bank_account_name' => $user['bank_account_name'],
+                'bank_name'         => $user['bank_name'],
+                'bank_card_no'      => $user['bank_card_no'],
+                'dept'              => $dept ? [
+                    'id'   => (int)$dept['id'],
+                    'name' => $dept['name'],
+                ] : null,
+                'status'            => $user['status'],
+                'reject_reason'     => isset($user['reject_reason']) ? $user['reject_reason'] : null,
+                'created_at'        => $user['created_at'],
+            ],
+        ]);
+    }
+
     public function approve(int $id)
     {
         $user = Db::table('users')->find($id);
@@ -69,7 +98,7 @@ class User extends AdminApiController
         Db::table('users')
             ->where('id', $id)
             ->update([
-                'status'        => 'disabled',
+                'status'        => 'rejected',
                 'reject_reason' => $rejectReason,
                 'updated_at'    => date('Y-m-d H:i:s'),
             ]);

@@ -128,6 +128,12 @@ export const api = {
   register(payload) {
     return request({ url: '/auth/register', method: 'POST', data: payload })
   },
+  resubmitProfile(payload) {
+    return request({ url: '/auth/resubmit-profile', method: 'POST', data: payload })
+  },
+  rejectedInfo(payload) {
+    return request({ url: '/auth/rejected-info', method: 'POST', data: payload })
+  },
   profile() {
     return request({ url: '/auth/profile' })
   },

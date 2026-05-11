@@ -20,6 +20,12 @@
       }
     },
     {
+      "path": "pages/auth/resubmit",
+      "style": {
+        "navigationBarTitleText": "重新提交"
+      }
+    },
+    {
       "path": "pages/home/index",
       "style": {
         "navigationBarTitleText": "首页",

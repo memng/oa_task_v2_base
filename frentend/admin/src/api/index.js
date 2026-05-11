@@ -188,5 +188,23 @@ export const api = {
   },
   announcementStatsDetail(id) {
     return client.get(`/admin/announcement-stats/${id}`)
+  },
+  adminUserDetail(id) {
+    return client.get(`/admin/users/${id}`)
+  },
+  rejectTemplates(params = {}) {
+    return client.get('/admin/reject-templates', { params })
+  },
+  activeRejectTemplates() {
+    return client.get('/admin/reject-templates/active')
+  },
+  createRejectTemplate(data) {
+    return client.post('/admin/reject-templates', data)
+  },
+  updateRejectTemplate(id, data) {
+    return client.put(`/admin/reject-templates/${id}`, data)
+  },
+  deleteRejectTemplate(id) {
+    return client.delete(`/admin/reject-templates/${id}`)
   }
 }

@@ -19,6 +19,7 @@ import Login from '../views/Login.vue'
 import { ADMIN_TOKEN_KEY } from '../api'
 import Inventory from '../views/Inventory.vue'
 import AnnouncementStats from '../views/AnnouncementStats.vue'
+import RejectTemplates from '../views/RejectTemplates.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -45,7 +46,8 @@ const router = createRouter({
         { path: 'inventory', component: Inventory },
         { path: 'reimburse', component: Reimburse },
         { path: 'leave', component: Leave },
-        { path: 'users', component: UserAudit }
+        { path: 'users', component: UserAudit },
+        { path: 'reject-templates', component: RejectTemplates }
       ]
     }
   ]

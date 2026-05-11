@@ -13,6 +13,8 @@ use think\facade\Route;
 Route::group('api', function () {
     Route::post('auth/login', '\app\api\controller\Auth@login');
     Route::post('auth/register', '\app\api\controller\Auth@register');
+    Route::post('auth/resubmit-profile', '\app\api\controller\Auth@resubmitProfile');
+    Route::post('auth/rejected-info', '\app\api\controller\Auth@rejectedInfo');
     Route::get('auth/profile', '\app\api\controller\Auth@profile');
     Route::put('auth/profile', '\app\api\controller\Auth@updateProfile');
     Route::post('auth/logout', '\app\api\controller\Auth@logout');
@@ -118,8 +120,15 @@ Route::group('api', function () {
         Route::post('leave/:id/status', '\app\admin\controller\Leave@updateStatus');
 
         Route::get('users', '\app\admin\controller\User@index');
+        Route::get('users/:id', '\app\admin\controller\User@detail');
         Route::post('users/:id/approve', '\app\admin\controller\User@approve');
         Route::post('users/:id/reject', '\app\admin\controller\User@reject');
+
+        Route::get('reject-templates', '\app\admin\controller\RejectTemplate@index');
+        Route::get('reject-templates/active', '\app\admin\controller\RejectTemplate@active');
+        Route::post('reject-templates', '\app\admin\controller\RejectTemplate@store');
+        Route::put('reject-templates/:id', '\app\admin\controller\RejectTemplate@update');
+        Route::delete('reject-templates/:id', '\app\admin\controller\RejectTemplate@delete');
 
         Route::get('voltages', '\app\admin\controller\Voltage@index');
         Route::post('voltages', '\app\admin\controller\Voltage@save');
