@@ -573,6 +573,25 @@ class Auth extends ApiController
         if (!empty($user['dept_id'])) {
             $dept = Db::table('departments')->find($user['dept_id']) ?: [];
         }
+        $contacts = Db::table('emergency_contacts')
+            ->where('user_id', $user['id'])
+            ->order('is_primary', 'desc')
+            ->order('id', 'asc')
+            ->select()
+            ->toArray();
+        $formattedContacts = array_map(function ($c) {
+            return [
+                'id'           => (int)$c['id'],
+                'user_id'      => (int)$c['user_id'],
+                'name'         => $c['name'],
+                'mobile'       => $c['mobile'],
+                'relationship' => $c['relationship'],
+                'is_primary'   => (bool)$c['is_primary'],
+                'created_at'   => $c['created_at'],
+                'updated_at'   => $c['updated_at'],
+            ];
+        }, $contacts);
+
         return [
             'id'                => (int)$user['id'],
             'name'              => $user['name'],
@@ -594,6 +613,7 @@ class Auth extends ApiController
             'openid'            => $user['openid'],
             'last_login'        => $user['last_login_at'],
             'hire_date'         => $user['hire_date'],
+            'emergency_contacts'=> $formattedContacts,
         ];
     }
 

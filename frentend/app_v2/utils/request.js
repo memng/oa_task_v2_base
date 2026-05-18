@@ -289,5 +289,23 @@ export const api = {
   },
   updateIntentOrder(id, payload) {
     return request({ url: `/intent-orders/${id}`, method: 'PUT', data: payload })
+  },
+  emergencyContacts() {
+    return request({ url: '/user-profile/emergency-contacts' })
+  },
+  addEmergencyContact(payload) {
+    return request({ url: '/user-profile/emergency-contacts', method: 'POST', data: payload })
+  },
+  updateEmergencyContact(id, payload) {
+    return request({ url: `/user-profile/emergency-contacts/${id}`, method: 'PUT', data: payload })
+  },
+  deleteEmergencyContact(id) {
+    return request({ url: `/user-profile/emergency-contacts/${id}`, method: 'DELETE' })
+  },
+  sendChangeMobileCode(payload) {
+    return request({ url: '/user-profile/send-change-mobile-code', method: 'POST', data: payload })
+  },
+  changeMobile(payload) {
+    return request({ url: '/user-profile/change-mobile', method: 'POST', data: payload })
   }
 }

@@ -198,29 +198,12 @@ const changeAvatar = () => {
     count: 1,
     sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
-    async success(res) {
+    success(res) {
       const [filePath] = res.tempFilePaths || []
       if (!filePath) return
-      try {
-        updatingAvatar.value = true
-        uni.showLoading({ title: '上传中', mask: true })
-        const uploadRes = await uploadFile(filePath)
-        if (!uploadRes || !uploadRes.url) {
-          throw new Error('upload failed')
-        }
-        const result = await api.updateProfile({ avatar_url: uploadRes.url })
-        if (result && result.profile) {
-          profile.value = result.profile
-          store.setProfile(result.profile)
-        }
-        uni.showToast({ title: '头像已更新', icon: 'success' })
-      } catch (error) {
-        console.warn('change avatar failed', error)
-        uni.showToast({ title: '头像更新失败', icon: 'none' })
-      } finally {
-        updatingAvatar.value = false
-        uni.hideLoading()
-      }
+      uni.navigateTo({
+        url: `/pages/mine/avatar-crop?src=${encodeURIComponent(filePath)}`
+      })
     },
     fail: (error) => {
       console.warn('choose avatar cancelled', error)

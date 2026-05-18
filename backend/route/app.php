@@ -100,6 +100,14 @@ Route::group('api', function () {
     Route::post('upload', '\app\api\controller\Upload@save');
     Route::post('upload/receipt', '\app\api\controller\Upload@receipt');
 
+    Route::get('user-profile/emergency-contacts', '\app\api\controller\UserProfile@emergencyContacts');
+    Route::post('user-profile/emergency-contacts', '\app\api\controller\UserProfile@addEmergencyContact');
+    Route::put('user-profile/emergency-contacts/:id', '\app\api\controller\UserProfile@updateEmergencyContact');
+    Route::delete('user-profile/emergency-contacts/:id', '\app\api\controller\UserProfile@deleteEmergencyContact');
+
+    Route::post('user-profile/send-change-mobile-code', '\app\api\controller\UserProfile@sendChangeMobileCode');
+    Route::post('user-profile/change-mobile', '\app\api\controller\UserProfile@changeMobile');
+
     Route::group('admin', function () {
         Route::post('auth/login', '\app\admin\controller\Auth@login');
         Route::get('auth/profile', '\app\admin\controller\Auth@profile');

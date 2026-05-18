@@ -20,12 +20,6 @@
       }
     },
     {
-      "path": "pages/auth/resubmit",
-      "style": {
-        "navigationBarTitleText": "重新提交"
-      }
-    },
-    {
       "path": "pages/home/index",
       "style": {
         "navigationBarTitleText": "首页",
@@ -169,6 +163,12 @@
       "path": "pages/mine/profile",
       "style": {
         "navigationBarTitleText": "个人信息"
+      }
+    },
+    {
+      "path": "pages/mine/avatar-crop",
+      "style": {
+        "navigationBarTitleText": "裁剪头像"
       }
     },
     {

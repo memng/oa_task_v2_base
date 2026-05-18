@@ -158,21 +158,6 @@ const loginByPassword = async () => {
     const errorData = error.data || {}
     if (errorData.locked && errorData.remaining_seconds) {
       startCountdown(errorData.remaining_seconds, form.mobile)
-      return
-    }
-    if (errorData.rejected) {
-      uni.showModal({
-        title: '审核未通过',
-        content: error.message || '请修改资料后重新提交审核',
-        confirmText: '重新编辑',
-        cancelText: '知道了',
-        success: (res) => {
-          if (res.confirm) {
-            uni.navigateTo({ url: `/pages/auth/resubmit?mobile=${form.mobile}` })
-          }
-        }
-      })
-      return
     }
   } finally {
     loading.value = false
@@ -231,20 +216,6 @@ const sendWeChatLogin = async (code, userInfo) => {
     handleLoginSuccess(res)
   } catch (error) {
     console.error(error)
-    const errorData = error.data || {}
-    if (errorData.rejected) {
-      uni.showModal({
-        title: '审核未通过',
-        content: error.message || '请修改资料后重新提交审核',
-        confirmText: '重新编辑',
-        cancelText: '知道了',
-        success: (res) => {
-          if (res.confirm) {
-            uni.showToast({ title: '请使用手机号登录后重新编辑', icon: 'none' })
-          }
-        }
-      })
-    }
   } finally {
     loading.value = false
   }
