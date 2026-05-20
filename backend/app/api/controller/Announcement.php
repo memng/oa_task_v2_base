@@ -148,4 +148,131 @@ class Announcement extends ApiController
 
         return $this->success([], '已标记为已读');
     }
+
+    public function read($id)
+    {
+        $userId = (int)$this->user()['id'];
+        $userDeptId = isset($this->user()['dept_id']) ? (int)$this->user()['dept_id'] : null;
+
+        $query = Db::table('announcements')->alias('a')
+            ->leftJoin('announcement_reads ar', 'ar.announcement_id = a.id AND ar.user_id = ' . $userId)
+            ->leftJoin('users u', 'u.id = a.created_by')
+            ->where('a.id', (int)$id)
+            ->where('a.publish_status', 'published');
+
+        $query->where(function ($q) use ($userDeptId) {
+            $q->whereNotExists(function ($subQ) {
+                $subQ->table('announcement_targets')
+                    ->whereColumn('announcement_id', 'a.id');
+            });
+            if ($userDeptId) {
+                $q->whereOrExists(function ($subQ) use ($userDeptId) {
+                    $subQ->table('announcement_targets')
+                        ->whereColumn('announcement_id', 'a.id')
+                        ->where('dept_id', $userDeptId);
+                });
+            }
+        });
+
+        $announcement = $query->field([
+            'a.*',
+            'ar.read_at as read_at',
+            'ar.id as read_id',
+            'u.name as creator_name',
+        ])->find();
+
+        if (!$announcement) {
+            $this->errorResponse('公告不存在或无权限查看', 404);
+        }
+
+        $announcement['is_read'] = !empty($announcement['read_at']);
+
+        $categoryMap = ['factory' => '工厂公告', 'sales' => '销售公告', 'general' => '通用公告'];
+        $announcement['category_label'] = $categoryMap[$announcement['category']] ?? '公告';
+
+        if (empty($announcement['read_at'])) {
+            $existing = Db::table('announcement_reads')
+                ->where('announcement_id', $id)
+                ->where('user_id', $userId)
+                ->find();
+            if (!$existing) {
+                Db::table('announcement_reads')->insert([
+                    'announcement_id' => $id,
+                    'user_id' => $userId,
+                    'read_at' => date('Y-m-d H:i:s'),
+                ]);
+            } else {
+                Db::table('announcement_reads')
+                    ->where('id', $existing['id'])
+                    ->update(['read_at' => date('Y-m-d H:i:s')]);
+            }
+            $announcement['is_read'] = true;
+        }
+
+        $announcement['content'] = $this->processRichTextImages($announcement['content']);
+
+        return $this->success($announcement);
+    }
+
+    protected function processRichTextImages($content)
+    {
+        if (empty($content)) {
+            return $content;
+        }
+
+        libxml_use_internal_errors(true);
+
+        $dom = new \DOMDocument();
+        $hasHtmlTag = stripos($content, '<html') !== false;
+        $hasBodyTag = stripos($content, '<body') !== false;
+
+        if (!$hasHtmlTag) {
+            $content = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>' . $content . '</body></html>';
+        }
+
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $content, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+
+        $images = $dom->getElementsByTagName('img');
+
+        foreach ($images as $img) {
+            $existingStyle = $img->getAttribute('style');
+            $imageStyles = [
+                'max-width' => '100%',
+                'height' => 'auto',
+                'display' => 'block',
+                'border-radius' => '8rpx'
+            ];
+
+            if (!empty($existingStyle)) {
+                $existingPairs = array_map('trim', explode(';', $existingStyle));
+                foreach ($existingPairs as $pair) {
+                    if (strpos($pair, ':') !== false) {
+                        [$key, $value] = array_map('trim', explode(':', $pair, 2));
+                        if (!isset($imageStyles[$key])) {
+                            $imageStyles[$key] = $value;
+                        }
+                    }
+                }
+            }
+
+            $styleString = '';
+            foreach ($imageStyles as $key => $value) {
+                $styleString .= $key . ':' . $value . ';';
+            }
+
+            $img->setAttribute('style', $styleString);
+        }
+
+        $result = $dom->saveHTML();
+
+        if (!$hasHtmlTag) {
+            $result = preg_replace('/^<!DOCTYPE.*?<body>/is', '', $result);
+            $result = preg_replace('/<\/body><\/html>$/i', '', $result);
+        }
+
+        libxml_clear_errors();
+        libxml_use_internal_errors(false);
+
+        return trim($result);
+    }
 }

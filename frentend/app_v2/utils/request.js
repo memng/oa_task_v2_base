@@ -128,12 +128,6 @@ export const api = {
   register(payload) {
     return request({ url: '/auth/register', method: 'POST', data: payload })
   },
-  resubmitProfile(payload) {
-    return request({ url: '/auth/resubmit-profile', method: 'POST', data: payload })
-  },
-  rejectedInfo(payload) {
-    return request({ url: '/auth/rejected-info', method: 'POST', data: payload })
-  },
   profile() {
     return request({ url: '/auth/profile' })
   },
@@ -194,6 +188,9 @@ export const api = {
   factoryBoard() {
     return request({ url: '/dashboard/factory-board' })
   },
+  todos(params = {}) {
+    return request({ url: '/dashboard/todos', data: params })
+  },
   createFactoryOrder(payload) {
     return request({ url: '/dashboard/factory-board', method: 'POST', data: payload })
   },
@@ -242,6 +239,9 @@ export const api = {
   announcements(params = {}) {
     return request({ url: '/announcements', data: params })
   },
+  announcementDetail(id) {
+    return request({ url: `/announcements/${id}` })
+  },
   announcementMarkRead(id) {
     return request({ url: `/announcements/${id}/read`, method: 'POST' })
   },
@@ -289,23 +289,5 @@ export const api = {
   },
   updateIntentOrder(id, payload) {
     return request({ url: `/intent-orders/${id}`, method: 'PUT', data: payload })
-  },
-  emergencyContacts() {
-    return request({ url: '/user-profile/emergency-contacts' })
-  },
-  addEmergencyContact(payload) {
-    return request({ url: '/user-profile/emergency-contacts', method: 'POST', data: payload })
-  },
-  updateEmergencyContact(id, payload) {
-    return request({ url: `/user-profile/emergency-contacts/${id}`, method: 'PUT', data: payload })
-  },
-  deleteEmergencyContact(id) {
-    return request({ url: `/user-profile/emergency-contacts/${id}`, method: 'DELETE' })
-  },
-  sendChangeMobileCode(payload) {
-    return request({ url: '/user-profile/send-change-mobile-code', method: 'POST', data: payload })
-  },
-  changeMobile(payload) {
-    return request({ url: '/user-profile/change-mobile', method: 'POST', data: payload })
   }
 }

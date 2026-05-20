@@ -50,36 +50,48 @@
 
     <view class="section-card">
       <view class="section-header">
-        <view class="section-title">待办事项 ({{ displayTasks.length }})</view>
+        <view class="section-title">待办事项 ({{ todoCounts.total }})</view>
         <text class="link" @click="goTaskCenter">查看全部</text>
       </view>
-      <view v-if="displayTasks.length" class="task-list">
-        <view class="task-item" v-for="task in displayTasks" :key="task.id">
-          <view class="task-top">
-            <view class="task-type">{{ task.type }}</view>
-            <view class="task-status" :class="task.status">{{ task.statusLabel }}</view>
+      <view class="todo-tabs">
+        <view
+          v-for="tab in todoTabs"
+          :key="tab.type"
+          class="todo-tab"
+          :class="{ active: activeTodoTab === tab.type }"
+          @click="activeTodoTab = tab.type"
+        >
+          {{ tab.label }}
+          <text v-if="todoCounts[tab.type] > 0" class="tab-badge">{{ todoCounts[tab.type] }}</text>
+        </view>
+      </view>
+      <view v-if="filteredTodos.length" class="todo-list">
+        <view
+          class="todo-item"
+          v-for="item in filteredTodos"
+          :key="item.id"
+          @click="handleTodoClick(item)"
+        >
+          <view class="todo-icon" :class="item.type">
+            <text>{{ getTodoIcon(item.type) }}</text>
           </view>
-          <view class="task-title">{{ task.title }}</view>
-          <view class="task-desc">{{ task.desc }}</view>
-          <view class="task-meta">
-            <text>PI：{{ task.piNo || '未填写' }}</text>
-            <text>截止：{{ task.deadline || '待定' }}</text>
+          <view class="todo-content">
+            <view class="todo-top">
+              <view class="todo-type">{{ item.type_label }}</view>
+              <view class="todo-status" :class="getStatusClass(item.type, item.status)">{{ item.status_label }}</view>
+            </view>
+            <view class="todo-title">{{ item.title }}</view>
+            <view class="todo-desc">{{ item.desc }}</view>
+            <view class="todo-meta">
+              <text>{{ formatTime(item.created_at) }}</text>
+            </view>
           </view>
-          <view class="task-actions">
-            <button class="outline" size="mini" @click="openTask(task)">详情</button>
-            <button
-              v-if="task.orderId"
-              class="outline"
-              size="mini"
-              @click="openOrder(task)"
-            >
-              订单详情
-            </button>
-            <button class="primary" size="mini" @click="openTask(task)">处理</button>
+          <view class="todo-arrow">
+            <text>›</text>
           </view>
         </view>
       </view>
-      <view v-else class="empty">暂无待办事项</view>
+      <view v-else class="empty">暂无{{ currentTabLabel }}待办</view>
     </view>
 
     <view class="section-card">
@@ -122,6 +134,17 @@ const intentSummary = ref({ pending: 0, done: 0, lost: 0 })
 const intentHomeList = ref([])
 const defaultAvatar = '/static/icons/avatar.png'
 
+const todoList = ref([])
+const todoCounts = ref({ total: 0, task: 0, leave: 0, reimburse: 0, announcement: 0 })
+const activeTodoTab = ref('all')
+const todoTabs = [
+  { type: 'all', label: '全部' },
+  { type: 'task', label: '任务' },
+  { type: 'leave', label: '请假' },
+  { type: 'reimburse', label: '报销' },
+  { type: 'announcement', label: '公告' }
+]
+
 const iconsBase = '/static/icons'
 const quickEntries = [
   { title: '订单任务', desc: '跟进执行', path: '/pages/order/list', icon: `${iconsBase}/order-task.png`, bg: '#e8f3ff' },
@@ -140,12 +163,16 @@ const isAdminDept = computed(() => {
 
 const fetchData = async () => {
   try {
-    summary.value = await api.summary()
-    const [assignedRes, reviewRes, intentRes] = await Promise.all([
+    const [summaryRes, todoRes, assignedRes, reviewRes, intentRes] = await Promise.all([
+      api.summary(),
+      api.todos({ limit: 10 }),
       api.taskList({ scope: 'assigned' }),
       isAdminDept.value ? api.taskList({ scope: 'review', status: 'waiting_audit' }) : Promise.resolve({ items: [] }),
       api.intentOrders({ limit: 3 })
     ])
+    summary.value = summaryRes
+    todoList.value = todoRes.items || []
+    todoCounts.value = todoRes.counts || { total: 0, task: 0, leave: 0, reimburse: 0, announcement: 0 }
     const isActive = (task) => !['completed', 'cancelled'].includes(task.status)
     const mergedTasks = new Map()
     ;(assignedRes.items || []).filter(isActive).forEach((task) => {
@@ -225,6 +252,90 @@ const displayTasks = computed(() =>
 const statusLabel = (status) => {
   if (!status) return '待跟进'
   return statusMap[status] || status
+}
+
+const filteredTodos = computed(() => {
+  if (activeTodoTab.value === 'all') {
+    return todoList.value
+  }
+  return todoList.value.filter(item => item.type === activeTodoTab.value)
+})
+
+const currentTabLabel = computed(() => {
+  const tab = todoTabs.find(t => t.type === activeTodoTab.value)
+  return tab ? tab.label : ''
+})
+
+const getTodoIcon = (type) => {
+  const icons = {
+    task: '📋',
+    leave: '🏖️',
+    reimburse: '💰',
+    announcement: '📢'
+  }
+  return icons[type] || '📌'
+}
+
+const getStatusClass = (type, status) => {
+  if (type === 'announcement') {
+    return 'unread'
+  }
+  if (status === 'waiting_audit' || status === 'pending') {
+    return 'warning'
+  }
+  if (status === 'in_progress') {
+    return 'info'
+  }
+  return ''
+}
+
+const formatTime = (timeStr) => {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  const now = new Date()
+  const diff = now - date
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days < 7) return `${days}天前`
+  return timeStr.substring(5, 10)
+}
+
+const handleTodoClick = (item) => {
+  switch (item.type) {
+    case 'task':
+      if (item.extra?.task_id) {
+        uni.navigateTo({ url: `/pages/tasks/detail?id=${item.extra.task_id}` })
+      }
+      break
+    case 'leave':
+      if (item.extra?.leave_id) {
+        uni.navigateTo({ url: `/pages/leave/detail?id=${item.extra.leave_id}` })
+      } else {
+        uni.navigateTo({ url: '/pages/leave/index' })
+      }
+      break
+    case 'reimburse':
+      if (item.extra?.reimburse_id) {
+        uni.navigateTo({ url: `/pages/finance/reimburse-detail?id=${item.extra.reimburse_id}` })
+      } else {
+        uni.navigateTo({ url: '/pages/finance/reimburse' })
+      }
+      break
+    case 'announcement':
+      if (item.extra?.announcement_id) {
+        uni.navigateTo({ url: `/pages/notice/detail?id=${item.extra.announcement_id}` })
+      } else {
+        uni.navigateTo({ url: '/pages/notice/list' })
+      }
+      break
+    default:
+      uni.showToast({ title: '暂不支持', icon: 'none' })
+  }
 }
 
 const tabPages = ['/pages/home/index', '/pages/tasks/index', '/pages/messages/index', '/pages/mine/index']
@@ -544,5 +655,156 @@ const handleSearch = () => {
   text-align: center;
   color: #999;
   padding: 32rpx 0;
+}
+
+.todo-tabs {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+  overflow-x: auto;
+  padding-bottom: 8rpx;
+}
+
+.todo-tab {
+  flex-shrink: 0;
+  padding: 12rpx 28rpx;
+  background: #f5f7fa;
+  border-radius: 32rpx;
+  font-size: 26rpx;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  position: relative;
+}
+
+.todo-tab.active {
+  background: #e6f0ff;
+  color: #1677ff;
+}
+
+.tab-badge {
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 20rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 20rpx;
+  min-width: 32rpx;
+  text-align: center;
+}
+
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 20rpx;
+  padding: 24rpx;
+  background: #fafbfc;
+  border-radius: 20rpx;
+  border: 1rpx solid #f0f0f0;
+}
+
+.todo-icon {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  flex-shrink: 0;
+}
+
+.todo-icon.task {
+  background: #e6f0ff;
+}
+
+.todo-icon.leave {
+  background: #e6fffb;
+}
+
+.todo-icon.reimburse {
+  background: #fff7e6;
+}
+
+.todo-icon.announcement {
+  background: #f9f0ff;
+}
+
+.todo-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.todo-type {
+  font-size: 24rpx;
+  color: #8c8c8c;
+}
+
+.todo-status {
+  padding: 4rpx 16rpx;
+  border-radius: 24rpx;
+  font-size: 22rpx;
+  background: #eaf2ff;
+  color: #1677ff;
+}
+
+.todo-status.warning {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.todo-status.info {
+  background: #e6f0ff;
+  color: #1677ff;
+}
+
+.todo-status.unread {
+  background: #f9f0ff;
+  color: #722ed1;
+}
+
+.todo-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-desc {
+  font-size: 24rpx;
+  color: #8c8c8c;
+  margin-bottom: 8rpx;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.todo-meta {
+  font-size: 22rpx;
+  color: #bfbfbf;
+}
+
+.todo-arrow {
+  color: #bfbfbf;
+  font-size: 32rpx;
+  align-self: center;
 }
 </style>

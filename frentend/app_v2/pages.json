@@ -94,6 +94,12 @@
       }
     },
     {
+      "path": "pages/notice/detail",
+      "style": {
+        "navigationBarTitleText": "公告详情"
+      }
+    },
+    {
       "path": "pages/attendance/index",
       "style": {
         "navigationBarTitleText": "考勤打卡"
