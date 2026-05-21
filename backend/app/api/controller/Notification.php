@@ -103,6 +103,139 @@ class Notification extends ApiController
         return $this->success([], '已标记为已读');
     }
 
+    public function markAllRead()
+    {
+        $userId = (int)$this->user()['id'];
+        $now = date('Y-m-d H:i:s');
+        $affected = Db::table('notifications')
+            ->where('user_id', $userId)
+            ->whereNull('read_at')
+            ->update(['read_at' => $now]);
+        return $this->success([
+            'affected' => (int)$affected,
+        ], '已全部标记为已读');
+    }
+
+    public function markGroupRead()
+    {
+        $userId = (int)$this->user()['id'];
+        $businessType = Request::post('business_type');
+        $ids = Request::post('ids');
+
+        $hasBusinessType = !empty($businessType) && $businessType !== 'all';
+        $hasIds = !empty($ids) && is_array($ids) && !empty(array_filter(array_map('intval', $ids)));
+        if (!$hasBusinessType && !$hasIds) {
+            return $this->errorResponse('至少需要指定 business_type 或 ids');
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        $query = Db::table('notifications')
+            ->where('user_id', $userId)
+            ->whereNull('read_at');
+
+        if ($hasBusinessType) {
+            $taskTemplateCodes = NotificationService::TASK_TEMPLATE_CODES;
+            $approvalTemplateCodes = NotificationService::APPROVAL_TEMPLATE_CODES;
+
+            if ($businessType === NotificationService::BUSINESS_TYPE_TASK) {
+                $query->where(function ($q) use ($taskTemplateCodes) {
+                    $q->whereIn('template_code', $taskTemplateCodes)
+                        ->whereOr('template_code', 'like', '%task%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%task%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), '=', 'order_created');
+                });
+            } elseif ($businessType === NotificationService::BUSINESS_TYPE_APPROVAL) {
+                $query->where(function ($q) use ($approvalTemplateCodes) {
+                    $q->whereIn('template_code', $approvalTemplateCodes)
+                        ->whereOr('template_code', 'like', '%leave%')
+                        ->whereOr('template_code', 'like', '%reimburse%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%leave%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%reimburse%');
+                });
+            } elseif ($businessType === NotificationService::BUSINESS_TYPE_SYSTEM) {
+                $query->where(function ($q) use ($taskTemplateCodes, $approvalTemplateCodes) {
+                    $q->whereNot(function ($subQ) use ($taskTemplateCodes, $approvalTemplateCodes) {
+                        $subQ->where(function ($subA) use ($taskTemplateCodes) {
+                            $subA->whereIn('template_code', $taskTemplateCodes)
+                                ->whereOr('template_code', 'like', '%task%')
+                                ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%task%')
+                                ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), '=', 'order_created');
+                        })->whereOr(function ($subA) use ($approvalTemplateCodes) {
+                            $subA->whereIn('template_code', $approvalTemplateCodes)
+                                ->whereOr('template_code', 'like', '%leave%')
+                                ->whereOr('template_code', 'like', '%reimburse%')
+                                ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%leave%')
+                                ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%reimburse%');
+                        });
+                    });
+                });
+            }
+        }
+
+        if (!empty($ids) && is_array($ids)) {
+            $idList = array_values(array_filter(array_map('intval', $ids)));
+            if (!empty($idList)) {
+                $query->whereIn('id', $idList);
+            }
+        }
+
+        $affected = $query->update(['read_at' => $now]);
+        return $this->success([
+            'affected' => (int)$affected,
+            'business_type' => $businessType,
+        ], '已标记为已读');
+    }
+
+    public function readSummary()
+    {
+        $userId = (int)$this->user()['id'];
+        $totalUnread = (int)Db::table('notifications')
+            ->where('user_id', $userId)
+            ->whereNull('read_at')
+            ->count();
+        $taskUnread = $this->countBusinessUnread($userId, NotificationService::BUSINESS_TYPE_TASK);
+        $approvalUnread = $this->countBusinessUnread($userId, NotificationService::BUSINESS_TYPE_APPROVAL);
+        $systemUnread = max(0, $totalUnread - $taskUnread - $approvalUnread);
+
+        return $this->success([
+            'total' => $totalUnread,
+            'task' => $taskUnread,
+            'approval' => $approvalUnread,
+            'system' => $systemUnread,
+        ]);
+    }
+
+    protected function countBusinessUnread(int $userId, string $businessType): int
+    {
+        $taskTemplateCodes = NotificationService::TASK_TEMPLATE_CODES;
+        $approvalTemplateCodes = NotificationService::APPROVAL_TEMPLATE_CODES;
+
+        $query = Db::table('notifications')
+            ->where('user_id', $userId)
+            ->whereNull('read_at');
+
+        if ($businessType === NotificationService::BUSINESS_TYPE_TASK) {
+            $query->where(function ($q) use ($taskTemplateCodes) {
+                $q->whereIn('template_code', $taskTemplateCodes)
+                    ->whereOr('template_code', 'like', '%task%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%task%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), '=', 'order_created');
+            });
+        } elseif ($businessType === NotificationService::BUSINESS_TYPE_APPROVAL) {
+            $query->where(function ($q) use ($approvalTemplateCodes) {
+                $q->whereIn('template_code', $approvalTemplateCodes)
+                    ->whereOr('template_code', 'like', '%leave%')
+                    ->whereOr('template_code', 'like', '%reimburse%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%leave%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%reimburse%');
+            });
+        } else {
+            return 0;
+        }
+        return (int)$query->count();
+    }
+
     public function save()
     {
         $actor = $this->user();

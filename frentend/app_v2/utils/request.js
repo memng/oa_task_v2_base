@@ -236,6 +236,21 @@ export const api = {
   urgeTask(id) {
     return request({ url: `/tasks/${id}/urge`, method: 'POST' })
   },
+  taskTemplates(params = {}) {
+    return request({ url: '/task-templates', data: params })
+  },
+  taskTemplateDetail(id) {
+    return request({ url: `/task-templates/${id}` })
+  },
+  createTaskTemplate(payload) {
+    return request({ url: '/task-templates', method: 'POST', data: payload })
+  },
+  updateTaskTemplate(id, payload) {
+    return request({ url: `/task-templates/${id}`, method: 'PUT', data: payload })
+  },
+  deleteTaskTemplate(id) {
+    return request({ url: `/task-templates/${id}`, method: 'DELETE' })
+  },
   announcements(params = {}) {
     return request({ url: '/announcements', data: params })
   },
@@ -250,6 +265,15 @@ export const api = {
   },
   notificationMarkRead(id) {
     return request({ url: `/notifications/${id}/read`, method: 'POST' })
+  },
+  notificationReadAll() {
+    return request({ url: '/notifications/read-all', method: 'POST' })
+  },
+  notificationReadGroup(payload = {}) {
+    return request({ url: '/notifications/read-group', method: 'POST', data: payload })
+  },
+  notificationReadSummary() {
+    return request({ url: '/notifications/read-summary' })
   },
   messageUnread() {
     return request({ url: '/messages/unread-count' })

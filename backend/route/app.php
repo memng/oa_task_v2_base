@@ -47,6 +47,12 @@ Route::group('api', function () {
     Route::get('tasks', '\app\api\controller\Task@index');
     Route::post('tasks', '\app\api\controller\Task@save');
 
+    Route::get('task-templates/:id', '\app\api\controller\TaskTemplate@read');
+    Route::put('task-templates/:id', '\app\api\controller\TaskTemplate@update');
+    Route::delete('task-templates/:id', '\app\api\controller\TaskTemplate@delete');
+    Route::get('task-templates', '\app\api\controller\TaskTemplate@index');
+    Route::post('task-templates', '\app\api\controller\TaskTemplate@save');
+
     Route::get('intent-orders/stages', '\app\api\controller\IntentOrder@stages');
     Route::put('intent-orders/:id', '\app\api\controller\IntentOrder@update');
     Route::post('intent-orders/:id/transition', '\app\api\controller\IntentOrder@transition');
@@ -61,6 +67,9 @@ Route::group('api', function () {
     Route::post('announcements', '\app\api\controller\Announcement@save');
 
     Route::rule('notifications/:id/read', '\app\api\controller\Notification@markRead', 'GET|POST');
+    Route::post('notifications/read-all', '\app\api\controller\Notification@markAllRead');
+    Route::post('notifications/read-group', '\app\api\controller\Notification@markGroupRead');
+    Route::get('notifications/read-summary', '\app\api\controller\Notification@readSummary');
     Route::get('notifications', '\app\api\controller\Notification@index');
     Route::post('notifications', '\app\api\controller\Notification@save');
 

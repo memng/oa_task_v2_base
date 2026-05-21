@@ -1,7 +1,14 @@
 <template>
   <scroll-view scroll-y class="page">
     <view class="card">
-      <view class="section-title">任务信息</view>
+      <view class="section-title">
+        任务信息
+        <text class="section-action" @click="openTemplatePicker">使用模板</text>
+      </view>
+      <view v-if="appliedTemplate" class="template-badge" @click="clearAppliedTemplate">
+        已应用模板：{{ appliedTemplate.name }}
+        <text class="template-clear">清除</text>
+      </view>
       <view class="form-item">
         <text>任务类型</text>
         <picker :range="types" range-key="label" @change="onTypeChange">
@@ -66,6 +73,13 @@
       <view class="section-title">任务要求</view>
       <textarea v-model="form.description" placeholder="请输入任务要求"></textarea>
     </view>
+    <view class="card template-action-card" @click="openSaveTemplateDialog">
+      <view class="template-action">
+        <text class="template-action-icon">⭐</text>
+        <text class="template-action-text">另存为任务模板</text>
+        <text class="template-action-arrow">›</text>
+      </view>
+    </view>
     <button class="primary" :loading="submitting" :disabled="submitting" @click="submit">创建任务</button>
   </scroll-view>
   <view v-if="orderDialogVisible" class="assign-mask">
@@ -128,6 +142,47 @@
       </view>
     </view>
   </view>
+  <view v-if="templateDialogVisible" class="assign-mask">
+    <view class="assign-dialog large">
+      <view class="dialog-title">选择任务模板</view>
+      <view class="dialog-section">
+        <input class="dialog-search" v-model.trim="templateKeyword" placeholder="搜索模板名称" />
+        <scroll-view scroll-y class="dialog-scroll">
+          <view v-if="templateLoading" class="loading">模板加载中...</view>
+          <view v-else-if="!templates.length" class="empty">暂无任务模板</view>
+          <view v-else>
+            <view
+              v-for="item in filteredTemplates"
+              :key="item.id"
+              class="template-item"
+              @click="selectTemplate(item)"
+            >
+              <view class="template-item-title">{{ item.name }}</view>
+              <view class="template-item-sub">{{ item.title }} · {{ formatType(item.type) }}</view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+      <view class="dialog-actions">
+        <button class="outline" @click="closeTemplatePicker">取消</button>
+      </view>
+    </view>
+  </view>
+  <view v-if="saveTemplateDialogVisible" class="assign-mask">
+    <view class="assign-dialog">
+      <view class="dialog-title">另存为任务模板</view>
+      <view class="dialog-section">
+        <view class="form-item">
+          <text>模板名称</text>
+          <input v-model="saveTemplateName" placeholder="请输入模板名称，例如：采购-进口轴承" />
+        </view>
+      </view>
+      <view class="dialog-actions">
+        <button class="outline" @click="closeSaveTemplateDialog">取消</button>
+        <button class="primary" :loading="savingTemplate" @click="submitSaveTemplate">保存</button>
+      </view>
+    </view>
+  </view>
 </template>
 
 <script setup>
@@ -160,6 +215,117 @@ const orderInfo = ref(null)
 const submitting = ref(false)
 const optionalOrderTypes = ['temporary', 'factory_order']
 const isOrderOptional = computed(() => optionalOrderTypes.includes(form.type))
+
+const templates = ref([])
+const templateLoading = ref(false)
+const templateDialogVisible = ref(false)
+const templateKeyword = ref('')
+const appliedTemplate = ref(null)
+
+const filteredTemplates = computed(() => {
+  if (!templateKeyword.value) {
+    return templates.value
+  }
+  const keyword = templateKeyword.value.toLowerCase()
+  return templates.value.filter((item) => {
+    const name = item.name ? item.name.toLowerCase() : ''
+    const title = item.title ? item.title.toLowerCase() : ''
+    return name.includes(keyword) || title.includes(keyword)
+  })
+})
+
+const formatType = (type) => {
+  const target = types.find((t) => t.value === type)
+  return target ? target.label : type
+}
+
+const fetchTemplates = async () => {
+  if (templateLoading.value) {
+    return
+  }
+  templateLoading.value = true
+  try {
+    const res = await api.taskTemplates()
+    templates.value = (res && res.items) || []
+  } catch (error) {
+    console.error(error)
+  } finally {
+    templateLoading.value = false
+  }
+}
+
+const openTemplatePicker = () => {
+  templateDialogVisible.value = true
+  fetchTemplates()
+}
+
+const closeTemplatePicker = () => {
+  templateDialogVisible.value = false
+}
+
+const selectTemplate = (item) => {
+  form.type = item.type || form.type
+  const typeTarget = types.find((t) => t.value === form.type)
+  if (typeTarget) {
+    currentType.value = typeTarget
+  }
+  form.title = item.title || ''
+  form.description = item.description || ''
+  form.need_audit = Number(item.need_audit || 0)
+  if (item.assigned_to) {
+    form.assigned_to = String(item.assigned_to)
+    assigneeName.value = ''
+  }
+  appliedTemplate.value = { id: item.id, name: item.name }
+  templateDialogVisible.value = false
+  uni.showToast({ title: '已应用模板', icon: 'success' })
+}
+
+const clearAppliedTemplate = () => {
+  appliedTemplate.value = null
+}
+
+const saveTemplateDialogVisible = ref(false)
+const saveTemplateName = ref('')
+const savingTemplate = ref(false)
+
+const openSaveTemplateDialog = () => {
+  if (!form.title) {
+    uni.showToast({ title: '请先填写任务标题', icon: 'none' })
+    return
+  }
+  saveTemplateName.value = form.title
+  saveTemplateDialogVisible.value = true
+}
+
+const closeSaveTemplateDialog = () => {
+  saveTemplateDialogVisible.value = false
+}
+
+const submitSaveTemplate = async () => {
+  if (!saveTemplateName.value) {
+    uni.showToast({ title: '请输入模板名称', icon: 'none' })
+    return
+  }
+  savingTemplate.value = true
+  try {
+    await api.createTaskTemplate({
+      name: saveTemplateName.value,
+      type: form.type,
+      title: form.title,
+      description: form.description,
+      assigned_to: form.assigned_to ? Number(form.assigned_to) : null,
+      need_audit: form.need_audit
+    })
+    saveTemplateDialogVisible.value = false
+    uni.showToast({ title: '模板已保存', icon: 'success' })
+    fetchTemplates()
+  } catch (error) {
+    console.error(error)
+  } finally {
+    savingTemplate.value = false
+  }
+}
 
 const orderList = ref([])
 const orderLoading = ref(false)
@@ -419,6 +585,70 @@ onLoad((query) => {
   font-size: 30rpx;
   font-weight: 600;
   margin-bottom: 16rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.section-action {
+  font-size: 26rpx;
+  color: #1677ff;
+  font-weight: 400;
+}
+.template-badge {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12rpx 16rpx;
+  border-radius: 16rpx;
+  background: #fff7e6;
+  color: #fa8c16;
+  font-size: 26rpx;
+  margin-bottom: 16rpx;
+}
+.template-clear {
+  color: #ff4d4f;
+  font-size: 24rpx;
+}
+.template-action-card {
+  padding: 0;
+  overflow: hidden;
+}
+.template-action {
+  display: flex;
+  align-items: center;
+  padding: 24rpx;
+}
+.template-action-icon {
+  font-size: 32rpx;
+  margin-right: 16rpx;
+}
+.template-action-text {
+  flex: 1;
+  font-size: 28rpx;
+  color: #333;
+}
+.template-action-arrow {
+  color: #ccc;
+  font-size: 36rpx;
+}
+.template-item {
+  padding: 20rpx 16rpx;
+  border-radius: 16rpx;
+  background: #f6f7fb;
+  margin-bottom: 16rpx;
+}
+.template-item:active {
+  background: #e8f1ff;
+}
+.template-item-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #222;
+}
+.template-item-sub {
+  font-size: 24rpx;
+  color: #818c99;
+  margin-top: 8rpx;
 }
 .form-item {
   margin-bottom: 16rpx;
