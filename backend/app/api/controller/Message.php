@@ -3,6 +3,7 @@
 namespace app\api\controller;
 
 use app\common\controller\ApiController;
+use app\common\service\NotificationService;
 use think\facade\Db;
 
 class Message extends ApiController
@@ -15,6 +16,37 @@ class Message extends ApiController
             ->where('user_id', $userId)
             ->whereNull('read_at')
             ->count();
+
+        $taskTemplateCodes = NotificationService::TASK_TEMPLATE_CODES;
+        $approvalTemplateCodes = NotificationService::APPROVAL_TEMPLATE_CODES;
+
+        $taskUnread = (int)Db::table('notifications')
+            ->where('user_id', $userId)
+            ->whereNull('read_at')
+            ->where(function ($query) use ($taskTemplateCodes) {
+                $query->whereIn('template_code', $taskTemplateCodes)
+                    ->whereOr('template_code', 'like', '%task%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%task%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), '=', 'order_created');
+            })
+            ->count();
+
+        $approvalUnread = (int)Db::table('notifications')
+            ->where('user_id', $userId)
+            ->whereNull('read_at')
+            ->where(function ($query) use ($approvalTemplateCodes) {
+                $query->whereIn('template_code', $approvalTemplateCodes)
+                    ->whereOr('template_code', 'like', '%leave%')
+                    ->whereOr('template_code', 'like', '%reimburse%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%leave%')
+                    ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%reimburse%');
+            })
+            ->count();
+
+        $systemUnread = $notificationCount - $taskUnread - $approvalUnread;
+        if ($systemUnread < 0) {
+            $systemUnread = 0;
+        }
 
         $announcementCount = (int)Db::table('announcements')->alias('a')
             ->leftJoin('announcement_reads ar', 'ar.announcement_id = a.id AND ar.user_id = ' . $userId)
@@ -52,6 +84,11 @@ class Message extends ApiController
             'notifications' => [
                 'personal'     => $notificationCount,
                 'announcements'=> $announcementCount,
+                'by_business'  => [
+                    'task'     => $taskUnread,
+                    'approval' => $approvalUnread,
+                    'system'   => $systemUnread,
+                ],
             ],
             'chats'         => $chatCounts,
         ]);

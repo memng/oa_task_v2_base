@@ -5,7 +5,12 @@ const createMessageSummary = () => ({
   total: 0,
   notifications: {
     personal: 0,
-    announcements: 0
+    announcements: 0,
+    by_business: {
+      task: 0,
+      approval: 0,
+      system: 0
+    }
   },
   chats: {
     total: 0,
@@ -46,11 +51,17 @@ export default {
     const base = createMessageSummary()
     const notificationSummary = summary.notifications || {}
     const chatSummary = summary.chats || {}
+    const businessSummary = notificationSummary.by_business || {}
     const merged = {
       total: typeof summary.total === 'number' ? summary.total : base.total,
       notifications: {
         personal: typeof notificationSummary.personal === 'number' ? notificationSummary.personal : base.notifications.personal,
-        announcements: typeof notificationSummary.announcements === 'number' ? notificationSummary.announcements : base.notifications.announcements
+        announcements: typeof notificationSummary.announcements === 'number' ? notificationSummary.announcements : base.notifications.announcements,
+        by_business: {
+          task: typeof businessSummary.task === 'number' ? businessSummary.task : base.notifications.by_business.task,
+          approval: typeof businessSummary.approval === 'number' ? businessSummary.approval : base.notifications.by_business.approval,
+          system: typeof businessSummary.system === 'number' ? businessSummary.system : base.notifications.by_business.system
+        }
       },
       chats: {
         total: typeof chatSummary.total === 'number' ? chatSummary.total : base.chats.total,

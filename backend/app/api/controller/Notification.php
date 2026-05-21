@@ -3,6 +3,7 @@
 namespace app\api\controller;
 
 use app\common\controller\ApiController;
+use app\common\service\NotificationService;
 use think\facade\Db;
 use think\facade\Request;
 
@@ -12,8 +13,10 @@ class Notification extends ApiController
     {
         $status = Request::get('status', 'all');
         $channel = Request::get('channel');
+        $businessType = Request::get('business_type');
         $keyword = trim((string)Request::get('keyword', ''));
         $limit = (int)Request::get('limit', 20);
+        $offset = (int)Request::get('offset', 0);
         $query = Db::table('notifications')
             ->where('user_id', $this->user()['id']);
         if ($status === 'unread') {
@@ -24,16 +27,53 @@ class Notification extends ApiController
         if ($channel) {
             $query->where('channel', $channel);
         }
+        if ($businessType && $businessType !== 'all') {
+            $taskTemplateCodes = NotificationService::TASK_TEMPLATE_CODES;
+            $approvalTemplateCodes = NotificationService::APPROVAL_TEMPLATE_CODES;
+
+            if ($businessType === NotificationService::BUSINESS_TYPE_TASK) {
+                $query->where(function ($q) use ($taskTemplateCodes) {
+                    $q->whereIn('template_code', $taskTemplateCodes)
+                        ->whereOr('template_code', 'like', '%task%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%task%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), '=', 'order_created');
+                });
+            } elseif ($businessType === NotificationService::BUSINESS_TYPE_APPROVAL) {
+                $query->where(function ($q) use ($approvalTemplateCodes) {
+                    $q->whereIn('template_code', $approvalTemplateCodes)
+                        ->whereOr('template_code', 'like', '%leave%')
+                        ->whereOr('template_code', 'like', '%reimburse%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%leave%')
+                        ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%reimburse%');
+                });
+            } elseif ($businessType === NotificationService::BUSINESS_TYPE_SYSTEM) {
+                $query->whereNot(function ($q) use ($taskTemplateCodes, $approvalTemplateCodes) {
+                    $q->where(function ($subQ) use ($taskTemplateCodes) {
+                        $subQ->whereIn('template_code', $taskTemplateCodes)
+                            ->whereOr('template_code', 'like', '%task%')
+                            ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%task%')
+                            ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), '=', 'order_created');
+                    })->whereOr(function ($subQ) use ($approvalTemplateCodes) {
+                        $subQ->whereIn('template_code', $approvalTemplateCodes)
+                            ->whereOr('template_code', 'like', '%leave%')
+                            ->whereOr('template_code', 'like', '%reimburse%')
+                            ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%leave%')
+                            ->whereOr(Db::raw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.type'))"), 'like', '%reimburse%');
+                    });
+                });
+            }
+        }
         if ($keyword !== '') {
             $query->where(function ($q) use ($keyword) {
                 $q->whereLike('title', "%{$keyword}%")
                     ->whereOr('content', 'like', "%{$keyword}%");
             });
         }
+        $total = $query->count();
         $query->order('created_at', 'desc')
             ->order('id', 'desc');
         if ($limit > 0) {
-            $query->limit($limit);
+            $query->limit($offset, $limit);
         }
         $items = $query->select()->toArray();
         $items = array_map(function ($item) {
@@ -46,7 +86,12 @@ class Notification extends ApiController
             }
             return $item;
         }, $items);
-        return $this->success(['items' => $items]);
+        return $this->success([
+            'items' => $items,
+            'total' => $total,
+            'offset' => $offset,
+            'limit' => $limit,
+        ]);
     }
 
     public function markRead($id)

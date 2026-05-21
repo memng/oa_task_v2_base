@@ -22,7 +22,7 @@
     </view>
 
     <view class="summary-panel">
-      <view class="summary-item" v-for="card in summaryCards" :key="card.label">
+      <view class="summary-item" v-for="card in summaryCards" :key="card.label" @click="switchBusinessFilter(card.business)">
         <view class="summary-value">{{ card.value }}</view>
         <view class="summary-label">{{ card.label }}</view>
       </view>
@@ -31,16 +31,26 @@
     <view class="section">
       <view class="section-header">
         <view class="section-title">通知</view>
-        <view class="tabs compact">
+        <view class="tabs">
           <text
-            v-for="item in notifyFilters"
+            v-for="item in businessTabs"
             :key="item.value"
-            :class="{ active: activeNotify === item.value }"
-            @click="switchNotifyFilter(item.value)"
+            :class="{ active: activeBusiness === item.value }"
+            @click="switchBusinessFilter(item.value)"
           >
             {{ item.label }}
           </text>
         </view>
+      </view>
+      <view class="filter-row">
+        <text
+          v-for="item in notifyFilters"
+          :key="item.value"
+          :class="['filter-btn', { active: activeNotify === item.value }]"
+          @click="switchNotifyFilter(item.value)"
+        >
+          {{ item.label }}
+        </text>
       </view>
       <view
         class="notify-card"
@@ -50,6 +60,7 @@
       >
         <view class="notify-head">
           <view class="notify-title">
+            <view class="biz-tag" :class="'biz-' + getBusinessType(item)">{{ getBusinessLabel(item) }}</view>
             <text>{{ item.title }}</text>
             <view v-if="!item.is_read" class="dot"></view>
           </view>
@@ -57,7 +68,16 @@
         </view>
         <view class="notify-desc">{{ item.content }}</view>
       </view>
-      <view v-if="!personalNotifications.length" class="empty">暂无个人通知</view>
+      <view v-if="!personalNotifications.length && !loading" class="empty">暂无{{ activeBusinessLabel }}通知</view>
+      <view v-if="loading" class="loading-more">加载中...</view>
+      <view
+        v-else-if="hasMore && personalNotifications.length > 0"
+        class="load-more-btn"
+        @click="loadMoreNotifications"
+      >
+        点击加载更多
+      </view>
+      <view v-else-if="!hasMore && personalNotifications.length > 0" class="no-more">没有更多了</view>
     </view>
 
     <view class="section">
@@ -135,10 +155,62 @@ import {
   getActionLabelByNotification
 } from '../../utils/notification-router'
 
+const BUSINESS_TYPES = {
+  TASK: 'task',
+  APPROVAL: 'approval',
+  SYSTEM: 'system'
+}
+
+const TASK_TEMPLATE_CODES = ['task_assigned', 'task_urged', 'order_created']
+const APPROVAL_TEMPLATE_CODES = ['leave_approved', 'leave_rejected', 'reimburse_approved', 'reimburse_rejected']
+
+function getBusinessType(notification) {
+  const templateCode = notification.template_code || ''
+  const payloadType = notification.payload?.type || ''
+
+  if (
+    TASK_TEMPLATE_CODES.includes(templateCode) ||
+    TASK_TEMPLATE_CODES.includes(payloadType) ||
+    templateCode.includes('task') ||
+    payloadType.includes('task') ||
+    templateCode === 'order_created' ||
+    payloadType === 'order_created'
+  ) {
+    return BUSINESS_TYPES.TASK
+  }
+  if (
+    APPROVAL_TEMPLATE_CODES.includes(templateCode) ||
+    APPROVAL_TEMPLATE_CODES.includes(payloadType) ||
+    templateCode.includes('leave') ||
+    payloadType.includes('leave') ||
+    templateCode.includes('reimburse') ||
+    payloadType.includes('reimburse')
+  ) {
+    return BUSINESS_TYPES.APPROVAL
+  }
+  return BUSINESS_TYPES.SYSTEM
+}
+
+function getBusinessLabel(notification) {
+  const type = getBusinessType(notification)
+  const labelMap = {
+    [BUSINESS_TYPES.TASK]: '任务',
+    [BUSINESS_TYPES.APPROVAL]: '审批',
+    [BUSINESS_TYPES.SYSTEM]: '系统'
+  }
+  return labelMap[type] || '系统'
+}
+
 const keyword = ref('')
 const personalNotifications = ref([])
 const announcements = ref([])
 const conversations = ref([])
+const businessTabs = [
+  { label: '全部', value: 'all' },
+  { label: '任务', value: BUSINESS_TYPES.TASK },
+  { label: '审批', value: BUSINESS_TYPES.APPROVAL },
+  { label: '系统', value: BUSINESS_TYPES.SYSTEM }
+]
 const announcementTabs = [
   { label: '全部通知', value: 'all' },
   { label: '系统', value: 'system' },
@@ -148,17 +220,81 @@ const notifyFilters = [
   { label: '未读', value: 'unread' },
   { label: '全部', value: 'all' }
 ]
+const PAGE_SIZE = 50
+const activeBusiness = ref('all')
 const activeAnnouncement = ref('all')
 const activeNotify = ref('unread')
+const listOffset = ref(0)
+const hasMore = ref(true)
+const loading = ref(false)
+let requestId = 0
 
-const fetchPersonalNotifications = async () => {
-  const params = {
-    keyword: keyword.value,
-    status: activeNotify.value,
-    limit: 20
+const activeBusinessLabel = computed(() => {
+  const tab = businessTabs.find(t => t.value === activeBusiness.value)
+  return tab ? tab.label : ''
+})
+
+const resetPagination = () => {
+  listOffset.value = 0
+  hasMore.value = true
+  personalNotifications.value = []
+}
+
+const fetchPersonalNotifications = async (reset = true) => {
+  if (reset) {
+    requestId++
+  } else {
+    if (loading.value || !hasMore.value) return
   }
-  const res = await api.notifications(params)
-  personalNotifications.value = res.items || []
+
+  const currentRequestId = requestId
+
+  if (reset) {
+    resetPagination()
+  }
+
+  if (!hasMore.value) return
+
+  loading.value = true
+  try {
+    const params = {
+      keyword: keyword.value,
+      status: activeNotify.value,
+      business_type: activeBusiness.value,
+      limit: PAGE_SIZE,
+      offset: listOffset.value
+    }
+    const res = await api.notifications(params)
+
+    if (currentRequestId !== requestId) {
+      return
+    }
+
+    const newItems = res.items || []
+    const total = res.total || 0
+
+    if (reset) {
+      personalNotifications.value = newItems
+    } else {
+      personalNotifications.value = [...personalNotifications.value, ...newItems]
+    }
+
+    listOffset.value = personalNotifications.value.length
+    hasMore.value = personalNotifications.value.length < total
+  } catch (error) {
+    if (currentRequestId === requestId) {
+      console.warn('fetch notifications failed', error)
+    }
+  } finally {
+    if (currentRequestId === requestId) {
+      loading.value = false
+    }
+  }
+}
+
+const loadMoreNotifications = () => {
+  if (!hasMore.value || loading.value) return
+  fetchPersonalNotifications(false)
 }
 
 const fetchAnnouncements = async () => {
@@ -192,6 +328,14 @@ const switchNotifyFilter = (value) => {
   fetchPersonalNotifications()
 }
 
+const switchBusinessFilter = (value) => {
+  if (value && value !== 'all' && !businessTabs.find(t => t.value === value)) {
+    return
+  }
+  activeBusiness.value = value || 'all'
+  fetchPersonalNotifications()
+}
+
 const handleSearch = () => {
   loadData()
 }
@@ -209,10 +353,18 @@ const openNotification = async (item, type) => {
       showCancel: false
     })
   } else {
-    if (!item.is_read) {
+    const wasUnread = !item.is_read
+    if (wasUnread) {
       await api.notificationMarkRead(item.id)
       item.is_read = true
       refreshMessageSummary()
+      if (activeNotify.value === 'unread') {
+        const idx = personalNotifications.value.findIndex(n => n.id === item.id)
+        if (idx >= 0) {
+          personalNotifications.value.splice(idx, 1)
+          listOffset.value = Math.max(0, listOffset.value - 1)
+        }
+      }
     }
     if (canNavigateToDetail(item)) {
       navigateToDetail(item)
@@ -269,13 +421,12 @@ const deptName = computed(() => {
 })
 const avatar = computed(() => profile.value.avatar_url || '/static/icons/avatar.png')
 const summaryData = computed(() => store.state.messageSummary || {})
+const businessSummary = computed(() => summaryData.value.notifications?.by_business || {})
 const summaryCards = computed(() => {
-  const notifySummary = summaryData.value.notifications || {}
-  const chatSummary = summaryData.value.chats || {}
   return [
-    { label: '未读通知', value: notifySummary.personal || 0 },
-    { label: '未读公告', value: notifySummary.announcements || 0 },
-    { label: '未读消息', value: chatSummary.total || 0 }
+    { label: '任务', value: businessSummary.value.task || 0, business: BUSINESS_TYPES.TASK },
+    { label: '审批', value: businessSummary.value.approval || 0, business: BUSINESS_TYPES.APPROVAL },
+    { label: '系统', value: businessSummary.value.system || 0, business: BUSINESS_TYPES.SYSTEM }
   ]
 })
 
@@ -388,6 +539,41 @@ onShow(loadData)
 .tabs.compact {
   gap: 12rpx;
 }
+.filter-row {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+.filter-btn {
+  font-size: 24rpx;
+  color: #666;
+  padding: 8rpx 20rpx;
+  border-radius: 20rpx;
+  background: #f6f7fb;
+}
+.filter-btn.active {
+  color: #1677ff;
+  background: #e6f4ff;
+}
+.biz-tag {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  margin-right: 8rpx;
+  font-weight: 500;
+}
+.biz-tag.biz-task {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+.biz-tag.biz-approval {
+  background: #f6ffed;
+  color: #52c41a;
+}
+.biz-tag.biz-system {
+  background: #e6f4ff;
+  color: #1677ff;
+}
 .notify-card {
   background: #f6f7fb;
   border-radius: 20rpx;
@@ -480,5 +666,21 @@ onShow(loadData)
   text-align: center;
   color: #999;
   padding: 32rpx 0;
+}
+.loading-more,
+.no-more {
+  text-align: center;
+  color: #999;
+  padding: 24rpx 0;
+  font-size: 24rpx;
+}
+.load-more-btn {
+  text-align: center;
+  color: #1677ff;
+  padding: 24rpx 0;
+  font-size: 26rpx;
+  background: #f6f7fb;
+  border-radius: 16rpx;
+  margin-top: 8rpx;
 }
 </style>

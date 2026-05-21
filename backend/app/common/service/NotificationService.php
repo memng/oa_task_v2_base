@@ -12,6 +12,10 @@ class NotificationService
     const CHANNEL_EMAIL = 'email';
     const CHANNEL_SMS = 'sms';
 
+    const BUSINESS_TYPE_TASK = 'task';
+    const BUSINESS_TYPE_APPROVAL = 'approval';
+    const BUSINESS_TYPE_SYSTEM = 'system';
+
     const TEMPLATE_ORDER_CREATED = 'order_created';
     const TEMPLATE_TASK_ASSIGNED = 'task_assigned';
     const TEMPLATE_TASK_URGED = 'task_urged';
@@ -19,6 +23,40 @@ class NotificationService
     const TEMPLATE_REIMBURSE_APPROVED = 'reimburse_approved';
     const TEMPLATE_LEAVE_REJECTED = 'leave_rejected';
     const TEMPLATE_REIMBURSE_REJECTED = 'reimburse_rejected';
+
+    const TASK_TEMPLATE_CODES = [
+        self::TEMPLATE_TASK_ASSIGNED,
+        self::TEMPLATE_TASK_URGED,
+        self::TEMPLATE_ORDER_CREATED,
+    ];
+
+    const APPROVAL_TEMPLATE_CODES = [
+        self::TEMPLATE_LEAVE_APPROVED,
+        self::TEMPLATE_LEAVE_REJECTED,
+        self::TEMPLATE_REIMBURSE_APPROVED,
+        self::TEMPLATE_REIMBURSE_REJECTED,
+    ];
+
+    public static function getBusinessType(?string $templateCode, ?string $payloadType = null): string
+    {
+        $code = $templateCode ?? $payloadType ?? '';
+
+        if (in_array($code, self::TASK_TEMPLATE_CODES, true)) {
+            return self::BUSINESS_TYPE_TASK;
+        }
+        if (strpos($code, 'task') !== false) {
+            return self::BUSINESS_TYPE_TASK;
+        }
+
+        if (in_array($code, self::APPROVAL_TEMPLATE_CODES, true)) {
+            return self::BUSINESS_TYPE_APPROVAL;
+        }
+        if (strpos($code, 'leave') !== false || strpos($code, 'reimburse') !== false) {
+            return self::BUSINESS_TYPE_APPROVAL;
+        }
+
+        return self::BUSINESS_TYPE_SYSTEM;
+    }
 
     public function sendOrderCreated(int $userId, array $order, ?int $initiatorId = null): void
     {
