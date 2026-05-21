@@ -44,6 +44,7 @@ class TaskTemplate extends ApiController
             $this->errorResponse('模板名称和任务标题不能为空');
         }
         $user = $this->user();
+        $isAdmin = \user_belongs_to_admin_dept($user);
         $payload = [
             'name'        => trim((string)$data['name']),
             'type'        => $data['type'] ?? 'procurement',
@@ -54,7 +55,7 @@ class TaskTemplate extends ApiController
             'extra'       => $data['extra'] ?? null,
             'is_global'   => $data['is_global'] ?? 0,
         ];
-        $id = $this->service->create($payload, (int)$user['id']);
+        $id = $this->service->create($payload, (int)$user['id'], $isAdmin);
         return $this->success(['id' => $id], '模板已创建', 201);
     }
 

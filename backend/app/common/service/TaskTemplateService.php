@@ -15,14 +15,10 @@ class TaskTemplateService
                 'u.name as creator_name',
             ]);
 
-        if ($isAdmin) {
-            $query->where(function ($q) use ($userId) {
-                $q->where('tt.is_global', 1)
-                    ->whereOr('tt.created_by', $userId);
-            });
-        } else {
-            $query->where('tt.created_by', $userId);
-        }
+        $query->where(function ($q) use ($userId) {
+            $q->where('tt.created_by', $userId)
+                ->whereOr('tt.is_global', 1);
+        });
 
         if ($type) {
             $query->where('tt.type', $type);
@@ -109,12 +105,14 @@ class TaskTemplateService
         ];
     }
 
-    public function create(array $payload, int $userId): int
+    public function create(array $payload, int $userId, bool $isAdmin = false): int
     {
         $now = date('Y-m-d H:i:s');
         $extra = !empty($payload['extra']) && is_array($payload['extra'])
             ? json_encode($payload['extra'], JSON_UNESCAPED_UNICODE)
             : null;
+
+        $isGlobal = $isAdmin ? (int)($payload['is_global'] ?? 0) : 0;
 
         return Db::table('task_templates')->insertGetId([
             'name'        => $payload['name'],
@@ -125,7 +123,7 @@ class TaskTemplateService
             'need_audit'  => (int)($payload['need_audit'] ?? 0),
             'extra'       => $extra,
             'created_by'  => $userId,
-            'is_global'   => (int)($payload['is_global'] ?? 0),
+            'is_global'   => $isGlobal,
             'created_at'  => $now,
             'updated_at'  => $now,
         ]);
@@ -166,7 +164,7 @@ class TaskTemplateService
                 : null;
         }
         if (array_key_exists('is_global', $payload)) {
-            $update['is_global'] = (int)$payload['is_global'];
+            $update['is_global'] = $isAdmin ? (int)$payload['is_global'] : (int)($row['is_global'] ?? 0);
         }
 
         if (!$update) {

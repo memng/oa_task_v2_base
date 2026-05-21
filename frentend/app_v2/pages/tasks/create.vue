@@ -5,9 +5,10 @@
         任务信息
         <text class="section-action" @click="openTemplatePicker">使用模板</text>
       </view>
-      <view v-if="appliedTemplate" class="template-badge" @click="clearAppliedTemplate">
-        已应用模板：{{ appliedTemplate.name }}
-        <text class="template-clear">清除</text>
+      <view v-if="currentAppliedTemplate" class="template-badge">
+        已应用模板：{{ currentAppliedTemplate.name }}
+        <text v-if="appliedTemplateStack.length > 1" class="template-stack-count">({{ appliedTemplateStack.length }})</text>
+        <text class="template-clear" @click.stop="onClearTemplateClick">清除</text>
       </view>
       <view class="form-item">
         <text>任务类型</text>
@@ -220,7 +221,13 @@ const templates = ref([])
 const templateLoading = ref(false)
 const templateDialogVisible = ref(false)
 const templateKeyword = ref('')
-const appliedTemplate = ref(null)
+const templateSnapshotStack = ref([])
+const appliedTemplateStack = ref([])
+
+const currentAppliedTemplate = computed(() => {
+  const stack = appliedTemplateStack.value
+  return stack.length ? stack[stack.length - 1] : null
+})
 
 const filteredTemplates = computed(() => {
   if (!templateKeyword.value) {
@@ -249,6 +256,7 @@ const fetchTemplates = async () => {
     templates.value = (res && res.items) || []
   } catch (error) {
     console.error(error)
+    uni.showToast({ title: '模板加载失败', icon: 'none' })
   } finally {
     templateLoading.value = false
   }
@@ -264,6 +272,15 @@ const closeTemplatePicker = () => {
 }
 
 const selectTemplate = (item) => {
+  templateSnapshotStack.value.push({
+    type: form.type,
+    currentTypeValue: currentType.value.value,
+    title: form.title,
+    description: form.description,
+    need_audit: form.need_audit,
+    assigned_to: form.assigned_to,
+    assigneeName: assigneeName.value
+  })
   form.type = item.type || form.type
   const typeTarget = types.find((t) => t.value === form.type)
   if (typeTarget) {
@@ -272,17 +289,55 @@ const selectTemplate = (item) => {
   form.title = item.title || ''
   form.description = item.description || ''
   form.need_audit = Number(item.need_audit || 0)
-  if (item.assigned_to) {
-    form.assigned_to = String(item.assigned_to)
-    assigneeName.value = ''
-  }
-  appliedTemplate.value = { id: item.id, name: item.name }
+  form.assigned_to = item.assigned_to ? String(item.assigned_to) : ''
+  assigneeName.value = ''
+  appliedTemplateStack.value.push({ id: item.id, name: item.name })
   templateDialogVisible.value = false
   uni.showToast({ title: '已应用模板', icon: 'success' })
 }
 
 const clearAppliedTemplate = () => {
-  appliedTemplate.value = null
+  const snapshot = templateSnapshotStack.value.pop()
+  appliedTemplateStack.value.pop()
+  if (snapshot) {
+    form.type = snapshot.type
+    const typeTarget = types.find((t) => t.value === snapshot.currentTypeValue)
+    if (typeTarget) {
+      currentType.value = typeTarget
+    }
+    form.title = snapshot.title
+    form.description = snapshot.description
+    form.need_audit = snapshot.need_audit
+    form.assigned_to = snapshot.assigned_to
+    assigneeName.value = snapshot.assigneeName
+  }
+}
+
+const onClearTemplateClick = () => {
+  const stackDepth = appliedTemplateStack.value.length
+  if (stackDepth <= 0) {
+    return
+  }
+  const tip = stackDepth > 1
+    ? `将回滚到上一层模板状态，当前已叠加 ${stackDepth} 层模板`
+    : '将回滚到应用模板前的状态'
+  uni.showModal({
+    title: '清除模板',
+    content: tip + '，是否继续？',
+    confirmText: '回滚',
+    cancelText: '取消',
+    success: (res) => {
+      if (res.confirm) {
+        clearAppliedTemplate()
+        const remain = appliedTemplateStack.value.length
+        if (remain > 0) {
+          uni.showToast({ title: `已回滚，剩余 ${remain} 层模板`, icon: 'none' })
+        } else {
+          uni.showToast({ title: '已回滚到初始状态', icon: 'none' })
+        }
+      }
+    }
+  })
 }
 
 const saveTemplateDialogVisible = ref(false)
@@ -322,6 +377,7 @@ const submitSaveTemplate = async () => {
     fetchTemplates()
   } catch (error) {
     console.error(error)
+    uni.showToast({ title: '模板保存失败', icon: 'none' })
   } finally {
     savingTemplate.value = false
   }
@@ -608,6 +664,11 @@ onLoad((query) => {
 .template-clear {
   color: #ff4d4f;
   font-size: 24rpx;
+}
+.template-stack-count {
+  color: #999;
+  font-size: 22rpx;
+  margin-left: 8rpx;
 }
 .template-action-card {
   padding: 0;
