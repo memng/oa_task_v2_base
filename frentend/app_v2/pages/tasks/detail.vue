@@ -65,6 +65,7 @@
       </view>
       <view class="actions">
         <button class="outline" @click="openChat">沟通</button>
+        <button v-if="canCopyTask" class="outline" :loading="copyingTask" @click="copyTask">复制任务</button>
         <button v-if="canUrgeTask" class="primary" :loading="urgingTask" @click="urgeTask">催办一次</button>
       </view>
     </view>
@@ -340,6 +341,7 @@ const staffMap = ref({})
 const auditComment = ref('')
 const auditProcessing = ref(false)
 const urgingTask = ref(false)
+const copyingTask = ref(false)
 const profile = computed(() => store.state.profile || {})
 const isAdminDept = computed(() => {
   const type = profile.value?.dept?.type
@@ -447,6 +449,14 @@ const canUrgeTask = computed(() => {
   if (isAdminDept.value) return true
   if (Number(task.value.created_by) === userId) return true
   
+  return false
+})
+const canCopyTask = computed(() => {
+  if (!task.value || !profile.value?.id) return false
+  const userId = Number(profile.value.id)
+  if (isAdminDept.value) return true
+  if (Number(task.value.created_by) === userId) return true
+  if (Number(task.value.assigned_to) === userId) return true
   return false
 })
 const normalizeModuleKey = (label = '', index = 0) => {
@@ -1271,6 +1281,35 @@ const urgeTask = async () => {
   } finally {
     urgingTask.value = false
   }
+}
+
+const copyTask = async () => {
+  if (!task.value?.id || copyingTask.value) return
+  uni.showModal({
+    title: '复制任务',
+    content: '确认复制该任务为新任务？新任务标题将自动添加"(副本)"',
+    confirmText: '确认复制',
+    cancelText: '取消',
+    success: async (res) => {
+      if (!res.confirm) return
+      copyingTask.value = true
+      try {
+        const result = await api.copyTask(task.value.id, { silentError: true })
+        uni.showToast({ title: '复制成功', icon: 'success' })
+        if (result && result.task_id) {
+          setTimeout(() => {
+            uni.redirectTo({ url: `/pages/tasks/detail?id=${result.task_id}` })
+          }, 800)
+        }
+      } catch (error) {
+        const msg = (error && error.message) || '复制失败，请重试'
+        uni.showToast({ title: msg, icon: 'none' })
+        console.error(error)
+      } finally {
+        copyingTask.value = false
+      }
+    }
+  })
 }
 </script>
 

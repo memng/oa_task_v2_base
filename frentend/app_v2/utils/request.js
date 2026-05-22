@@ -20,6 +20,7 @@ export function setBaseUrl(url) {
 
 export function request(options) {
   const token = store.state.token
+  const silent = options.silentError === true
   return new Promise((resolve, reject) => {
     const headers = options.header || {}
     if (!headers['Content-Type']) {
@@ -37,13 +38,17 @@ export function request(options) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data.data)
         } else {
-          uni.showToast({ title: res.data.message || '请求失败', icon: 'none' })
-          reject(res.data)
+          if (!silent) {
+            uni.showToast({ title: res.data.message || '请求失败', icon: 'none' })
+          }
+          reject(res.data || {})
         }
       },
       fail: (err) => {
-        uni.showToast({ title: '网络异常', icon: 'none' })
-        reject(err)
+        if (!silent) {
+          uni.showToast({ title: '网络异常', icon: 'none' })
+        }
+        reject(err || {})
       }
     })
   })
@@ -235,6 +240,9 @@ export const api = {
   },
   urgeTask(id) {
     return request({ url: `/tasks/${id}/urge`, method: 'POST' })
+  },
+  copyTask(id, options = {}) {
+    return request({ url: `/tasks/${id}/copy`, method: 'POST', silentError: options.silentError })
   },
   taskTemplates(params = {}) {
     return request({ url: '/task-templates', data: params })

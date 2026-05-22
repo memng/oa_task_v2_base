@@ -410,6 +410,38 @@ class Task extends ApiController
         return $this->success([], $result['message']);
     }
 
+    public function copy($id)
+    {
+        $taskId = (int)$id;
+        $user = $this->user();
+        $taskRow = Db::table('tasks')->alias('t')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->field([
+                't.*',
+                'o.initiator_id as order_initiator_id',
+                'o.sales_owner_id as order_sales_owner_id',
+            ])
+            ->where('t.id', $taskId)
+            ->find();
+        if (!$taskRow) {
+            $this->errorResponse('任务不存在', 404);
+        }
+
+        $canCopy = (int)$taskRow['created_by'] === (int)$user['id']
+            || (int)($taskRow['assigned_to'] ?? 0) === (int)$user['id']
+            || \user_belongs_to_admin_dept($user);
+        if (!$canCopy) {
+            $this->errorResponse('暂无权限复制该任务', 403);
+        }
+
+        $result = $this->taskService->copyTask($taskId, $user['id']);
+        if (!$result['success']) {
+            $this->errorResponse($result['message']);
+        }
+
+        return $this->success(['task_id' => $result['task_id']], $result['message']);
+    }
+
     protected function canUrgeTask(array $taskRow, array $user): bool
     {
         if (\user_belongs_to_admin_dept($user)) {

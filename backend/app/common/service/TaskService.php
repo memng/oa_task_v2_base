@@ -448,4 +448,219 @@ class TaskService
 
         return ['success' => true, 'message' => '催办成功'];
     }
+
+    public function copyTask(int $sourceTaskId, int $operatorId): array
+    {
+        $source = Db::table('tasks')->where('id', $sourceTaskId)->find();
+        if (!$source) {
+            return ['success' => false, 'message' => '源任务不存在'];
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $baseTitle = preg_replace('/\s*\(副本\)\s*$/', '', $source['title']);
+        $copyTitle = $baseTitle . ' (副本)';
+
+        $newTaskId = 0;
+        $copiedFiles = [];
+
+        Db::startTrans();
+        try {
+            $newTaskId = Db::table('tasks')->insertGetId([
+                'order_id'         => $source['order_id'],
+                'order_product_id' => $source['order_product_id'],
+                'parent_task_id'   => $source['parent_task_id'],
+                'type'             => $source['type'],
+                'title'            => $copyTitle,
+                'description'      => $source['description'],
+                'assigned_to'      => $source['assigned_to'],
+                'created_by'       => $operatorId,
+                'start_at'         => null,
+                'due_at'           => $source['due_at'],
+                'status'           => 'pending',
+                'need_audit'       => $source['need_audit'],
+                'priority'         => $source['priority'],
+                'payload'          => $source['payload'],
+                'created_at'       => $now,
+                'updated_at'       => $now,
+            ]);
+
+            $this->copyTaskExtensions($sourceTaskId, $newTaskId, $source['type']);
+
+            $attachmentRows = Db::table('task_attachments')
+                ->where('task_id', $sourceTaskId)
+                ->select()
+                ->toArray();
+            if ($attachmentRows) {
+                $mediaIds = array_column($attachmentRows, 'media_id');
+                $mediaRows = Db::table('media_assets')
+                    ->whereIn('id', $mediaIds)
+                    ->select()
+                    ->toArray();
+                $mediaMap = [];
+                foreach ($mediaRows as $mr) {
+                    $mediaMap[$mr['id']] = $mr;
+                }
+
+                $newRows = [];
+                foreach ($attachmentRows as $row) {
+                    $sourceMedia = $mediaMap[$row['media_id']] ?? null;
+                    $newMediaId = null;
+                    if ($sourceMedia) {
+                        $copyResult = $this->copyMediaAsset($sourceMedia, $operatorId);
+                        $newMediaId = $copyResult['media_id'];
+                        if (!empty($copyResult['copied_path'])) {
+                            $copiedFiles[] = $copyResult['copied_path'];
+                        }
+                    } else {
+                        $newMediaId = $row['media_id'];
+                    }
+                    $newRows[] = [
+                        'task_id'    => $newTaskId,
+                        'media_id'   => $newMediaId,
+                        'created_at' => $now,
+                    ];
+                }
+                Db::table('task_attachments')->insertAll($newRows);
+            }
+
+            $this->addLog($newTaskId, $operatorId, 'created', "从任务 #{$sourceTaskId} 复制：{$copyTitle}");
+
+            if (!empty($source['order_id'])) {
+                $this->refreshOrderStatus((int)$source['order_id']);
+            }
+
+            Db::commit();
+        } catch (\Exception $e) {
+            Db::rollback();
+            foreach ($copiedFiles as $path) {
+                try {
+                    \think\facade\Filesystem::disk('public')->delete($path);
+                } catch (\Exception $delErr) {
+                    error_log('Failed to clean up copied file during task copy rollback: ' . $path . ' - ' . $delErr->getMessage());
+                }
+            }
+            return ['success' => false, 'message' => '任务复制失败：' . $e->getMessage()];
+        }
+
+        $newTask = Db::table('tasks')->where('id', $newTaskId)->find();
+        if ($newTask) {
+            $assignedTo = (int)($newTask['assigned_to'] ?? 0);
+            if ($assignedTo > 0) {
+                $taskData = [
+                    'id' => $newTaskId,
+                    'type' => $newTask['type'],
+                    'title' => $copyTitle,
+                    'order_id' => $newTask['order_id'] ?? null,
+                    'due_at' => $newTask['due_at'] ?? null,
+                ];
+                try {
+                    $this->notificationService->sendTaskAssigned($assignedTo, $taskData, $operatorId);
+                } catch (\Exception $e) {
+                    error_log('Task copy notification failed for task #' . $newTaskId . ': ' . $e->getMessage());
+                }
+            }
+        }
+
+        return ['success' => true, 'message' => '任务复制成功', 'task_id' => $newTaskId];
+    }
+
+    protected function copyMediaAsset(array $sourceMedia, int $operatorId): array
+    {
+        $sourcePath = $sourceMedia['storage_path'];
+        $extension = pathinfo($sourcePath, PATHINFO_EXTENSION);
+        $dir = pathinfo($sourcePath, PATHINFO_DIRNAME);
+        $newFilename = uniqid('copy_') . ($extension ? '.' . $extension : '');
+        $newPath = $dir . '/' . $newFilename;
+
+        $copied = \think\facade\Filesystem::disk('public')->copy($sourcePath, $newPath);
+        if (!$copied) {
+            throw new \RuntimeException('附件文件复制失败：' . $sourcePath);
+        }
+
+        $newMediaId = Db::table('media_assets')->insertGetId([
+            'file_name'   => $sourceMedia['file_name'],
+            'mime_type'   => $sourceMedia['mime_type'],
+            'file_type'   => $sourceMedia['file_type'],
+            'storage_path'=> $newPath,
+            'file_size'   => $sourceMedia['file_size'],
+            'uploaded_by' => $operatorId,
+            'created_at'  => date('Y-m-d H:i:s'),
+        ]);
+
+        return ['media_id' => $newMediaId, 'copied_path' => $newPath];
+    }
+
+    protected function copyTaskExtensions(int $sourceTaskId, int $newTaskId, string $type): void
+    {
+        switch ($type) {
+            case 'procurement':
+                $record = Db::table('task_procurements')->where('task_id', $sourceTaskId)->find();
+                if ($record) {
+                    Db::table('task_procurements')->insert([
+                        'task_id'         => $newTaskId,
+                        'supplier_id'     => $record['supplier_id'],
+                        'supplier_name'   => $record['supplier_name'],
+                        'purchase_status' => 'not_ordered',
+                        'purchase_date'   => null,
+                        'delivery_date'   => $record['delivery_date'],
+                        'source_location' => $record['source_location'],
+                        'purchase_price'  => $record['purchase_price'],
+                        'currency'        => $record['currency'],
+                        'is_confidential' => $record['is_confidential'],
+                    ]);
+                }
+                break;
+            case 'nameplate':
+                $record = Db::table('task_nameplates')->where('task_id', $sourceTaskId)->find();
+                if ($record) {
+                    Db::table('task_nameplates')->insert([
+                        'task_id'          => $newTaskId,
+                        'template_version' => $record['template_version'],
+                        'requirement'      => $record['requirement'],
+                    ]);
+                }
+                break;
+            case 'machine_data':
+                $record = Db::table('task_machine_data')->where('task_id', $sourceTaskId)->find();
+                if ($record) {
+                    Db::table('task_machine_data')->insert([
+                        'task_id'     => $newTaskId,
+                        'requirement' => $record['requirement'],
+                    ]);
+                }
+                break;
+            case 'acceptance':
+                $record = Db::table('task_acceptances')->where('task_id', $sourceTaskId)->find();
+                if ($record) {
+                    Db::table('task_acceptances')->insert([
+                        'task_id'     => $newTaskId,
+                        'requirement' => $record['requirement'],
+                    ]);
+                }
+                break;
+            case 'packaging':
+                $record = Db::table('task_packaging')->where('task_id', $sourceTaskId)->find();
+                if ($record) {
+                    Db::table('task_packaging')->insert([
+                        'task_id'      => $newTaskId,
+                        'requirement'  => $record['requirement'],
+                        'reviewer_id'  => $record['reviewer_id'],
+                    ]);
+                }
+                break;
+            case 'shipment':
+                $record = Db::table('task_shipments')->where('task_id', $sourceTaskId)->find();
+                if ($record) {
+                    Db::table('task_shipments')->insert([
+                        'task_id'      => $newTaskId,
+                        'requirement'  => $record['requirement'],
+                        'container_no' => null,
+                        'seal_no'      => null,
+                    ]);
+                }
+                break;
+            default:
+                break;
+        }
+    }
 }
