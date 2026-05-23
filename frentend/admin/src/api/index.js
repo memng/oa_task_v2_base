@@ -188,5 +188,8 @@ export const api = {
   },
   announcementStatsDetail(id) {
     return client.get(`/admin/announcement-stats/${id}`)
+  },
+  orderBoardSummary(params = {}) {
+    return client.get('/admin/order-board/summary', { params })
   }
 }

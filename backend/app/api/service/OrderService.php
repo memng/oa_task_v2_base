@@ -71,6 +71,15 @@ class OrderService
                 $this->syncDocuments($orderId, $payload['attachments'], $user['id']);
             }
 
+            $this->recordStatusChange(
+                $orderId,
+                null,
+                $isDraft ? 'draft' : 'in_progress',
+                $user['id'],
+                $payload['currency'] ?? 'CNY',
+                (float)($payload['grand_total'] ?? 0)
+            );
+
             return $orderId;
         });
 
@@ -158,6 +167,17 @@ class OrderService
             if (!empty($payload['attachments'])) {
                 Db::table('order_documents')->where('order_id', $orderId)->delete();
                 $this->syncDocuments($orderId, $payload['attachments'], $user['id']);
+            }
+
+            if ($isSubmit) {
+                $this->recordStatusChange(
+                    $orderId,
+                    'draft',
+                    'in_progress',
+                    $user['id'],
+                    $update['currency'] ?? $order['currency'] ?? null,
+                    (float)($update['grand_total'] ?? $order['grand_total'] ?? 0)
+                );
             }
         });
 
@@ -405,5 +425,47 @@ class OrderService
                 'can_view_procurement' => $canSeeProcurement,
             ],
         ];
+    }
+
+    public function recordStatusChange(int $orderId, ?string $oldStatus, string $newStatus, ?int $changedBy, ?string $currencySnapshot = null, ?float $grandTotalSnapshot = null, bool $throwOnError = true): void
+    {
+        if ($oldStatus !== null && $oldStatus === $newStatus) {
+            return;
+        }
+
+        try {
+            Db::table('order_status_history')->insert([
+                'order_id'   => $orderId,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'changed_by' => $changedBy,
+                'changed_at' => date('Y-m-d H:i:s'),
+                'currency_snapshot'   => $currencySnapshot,
+                'grand_total_snapshot'=> $grandTotalSnapshot,
+            ]);
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            $isDuplicate = strpos($msg, 'Duplicate entry') !== false
+                || strpos($msg, 'SQLSTATE[23000]') !== false
+                || strpos($msg, 'uk_osh_idempotent') !== false;
+
+            if ($isDuplicate) {
+                \think\facade\Log::info('order_status_history duplicate insert skipped', [
+                    'order_id' => $orderId,
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus,
+                ]);
+                return;
+            }
+
+            \think\facade\Log::error('order_status_history insert failed: ' . $msg, [
+                'order_id' => $orderId,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+            ]);
+            if ($throwOnError) {
+                throw $e;
+            }
+        }
     }
 }

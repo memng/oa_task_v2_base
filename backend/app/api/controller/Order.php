@@ -183,9 +183,26 @@ class Order extends ApiController
             'updated_at'         => date('Y-m-d H:i:s'),
         ];
         $update = array_filter($update, fn($value) => !is_null($value));
-        if ($update) {
-            Db::table('orders')->where('id', $id)->update($update);
-        }
+        $newStatus = $update['status'] ?? null;
+        $userId = $this->user()['id'] ?? null;
+
+        Db::transaction(function () use ($id, $update, $newStatus, $order, $userId) {
+            if ($update) {
+                Db::table('orders')->where('id', $id)->update($update);
+            }
+            if ($newStatus && $newStatus !== $order['status']) {
+                $freshOrder = Db::table('orders')->where('id', $id)->find();
+                $this->service->recordStatusChange(
+                    (int)$id,
+                    $order['status'],
+                    $newStatus,
+                    $userId,
+                    $freshOrder['currency'] ?? $order['currency'] ?? null,
+                    (float)($freshOrder['grand_total'] ?? $order['grand_total'] ?? 0)
+                );
+            }
+        });
+
         return $this->read($id);
     }
 
@@ -296,7 +313,7 @@ class Order extends ApiController
             }
         }
 
-        Db::transaction(function () use ($orderId) {
+        Db::transaction(function () use ($orderId, $order, $user) {
             Db::table('orders')
                 ->where('id', $orderId)
                 ->update([
@@ -311,6 +328,18 @@ class Order extends ApiController
                     'status'     => 'cancelled',
                     'updated_at' => date('Y-m-d H:i:s'),
                 ]);
+
+            // 快照口径：记录"取消动作发生瞬间"的订单币种和金额
+            // 使用的是取消前从 DB 查出的原始值，而非取消后可能被修改的值
+            $this->service->recordStatusChange(
+                $orderId,
+                $order['status'],
+                'cancelled',
+                $user['id'] ?? null,
+                $order['currency'] ?? null,
+                (float)($order['grand_total'] ?? 0),
+                true
+            );
         });
 
         return $this->success([], '订单已取消');

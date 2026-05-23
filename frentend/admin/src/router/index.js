@@ -19,6 +19,7 @@ import Login from '../views/Login.vue'
 import { ADMIN_TOKEN_KEY } from '../api'
 import Inventory from '../views/Inventory.vue'
 import AnnouncementStats from '../views/AnnouncementStats.vue'
+import OrderBoard from '../views/OrderBoard.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -39,6 +40,7 @@ const router = createRouter({
         { path: 'order-settings/voltages', component: Voltages },
         { path: 'announcements', component: Announcements },
         { path: 'announcement-stats', component: AnnouncementStats },
+        { path: 'order-board', component: OrderBoard },
         { path: 'departments', component: Departments },
         { path: 'shift-schedules', component: ShiftSchedules },
         { path: 'suppliers', component: Suppliers },

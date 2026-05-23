@@ -160,5 +160,7 @@ Route::group('api', function () {
         Route::get('announcement-stats/summary', '\app\admin\controller\AnnouncementStats@summary');
         Route::get('announcement-stats/list', '\app\admin\controller\AnnouncementStats@listAnnouncements');
         Route::get('announcement-stats/:id', '\app\admin\controller\AnnouncementStats@detail');
+
+        Route::get('order-board/summary', '\app\admin\controller\OrderBoard@summary');
     });
 });
