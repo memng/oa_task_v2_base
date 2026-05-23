@@ -244,6 +244,18 @@ export const api = {
   copyTask(id, options = {}) {
     return request({ url: `/tasks/${id}/copy`, method: 'POST', silentError: options.silentError })
   },
+  followTask(id) {
+    return request({ url: `/tasks/${id}/follow`, method: 'POST', silentError: true })
+  },
+  unfollowTask(id) {
+    return request({ url: `/tasks/${id}/unfollow`, method: 'POST', silentError: true })
+  },
+  taskFollowStatus(id) {
+    return request({ url: `/tasks/${id}/follow-status` })
+  },
+  followedTasks(params = {}) {
+    return request({ url: '/tasks/followed', data: params })
+  },
   taskTemplates(params = {}) {
     return request({ url: '/task-templates', data: params })
   },

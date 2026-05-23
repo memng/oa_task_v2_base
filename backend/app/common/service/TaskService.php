@@ -100,6 +100,18 @@ class TaskService
         if ($orderId) {
             $this->refreshOrderStatus((int)$orderId);
         }
+
+        $notifyKeys = ['status', 'assigned_to', 'due_at', 'start_at', 'priority', 'completed_at'];
+        $hasNotifyChange = false;
+        foreach ($notifyKeys as $key) {
+            if (array_key_exists($key, $changes)) {
+                $hasNotifyChange = true;
+                break;
+            }
+        }
+        if ($hasNotifyChange) {
+            $this->notifyFollowersOnUpdate($taskId, $existingTask, $changes, $operatorId);
+        }
     }
 
     protected function syncTaskExtensions(int $taskId, string $type, array $extra): void
@@ -192,7 +204,7 @@ class TaskService
         ]);
     }
 
-    public function updateProcurement(int $taskId, array $payload): void
+    public function updateProcurement(int $taskId, array $payload, ?int $operatorId = null): void
     {
         $record = Db::table('task_procurements')->where('task_id', $taskId)->find();
         $update = [];
@@ -256,6 +268,14 @@ class TaskService
         }
         if ($selectedSupplier && (int)($selectedSupplier['is_internal'] ?? 0) === 1 && !empty($selectedSupplier['factory_owner_id'])) {
             $this->ensureFactoryOrderTask($taskId, (int)$selectedSupplier['factory_owner_id']);
+        }
+
+        if (!empty($update) && $operatorId !== null) {
+            $task = Db::table('tasks')->where('id', $taskId)->find();
+            if ($task) {
+                $changeSummary = ['procurement_updated' => array_keys($update)];
+                $this->notifyFollowersOnUpdate($taskId, $task, $changeSummary, $operatorId);
+            }
         }
     }
 
@@ -446,7 +466,74 @@ class TaskService
         $this->notificationService->sendTaskUrged($assignedTo, $taskData, $operatorId);
         $this->addLog($taskId, $operatorId, 'urged', $task['title']);
 
+        $this->notifyFollowersOnUpdate($taskId, $task, ['status' => 'urged'], $operatorId);
+
         return ['success' => true, 'message' => '催办成功'];
+    }
+
+    public function notifyFollowersOnUpdate(int $taskId, array $task, array $changes, ?int $operatorId = null): void
+    {
+        try {
+            $followerIds = Db::table('task_followers')
+                ->where('task_id', $taskId)
+                ->column('user_id');
+            if (empty($followerIds)) {
+                return;
+            }
+            $excluded = [];
+            if ($operatorId) {
+                $excluded[] = (int)$operatorId;
+            }
+            $assigneeId = (int)($task['assigned_to'] ?? 0);
+            if ($assigneeId > 0) {
+                $excluded[] = $assigneeId;
+            }
+            $excluded = array_unique(array_filter(array_map('intval', $excluded)));
+            $targets = [];
+            foreach ($followerIds as $uid) {
+                $uid = (int)$uid;
+                if ($uid <= 0) {
+                    continue;
+                }
+                if (!empty($excluded) && in_array($uid, $excluded, true)) {
+                    continue;
+                }
+                $targets[] = $uid;
+            }
+            if (empty($targets)) {
+                return;
+            }
+            $taskData = [
+                'id' => $taskId,
+                'type' => $task['type'] ?? null,
+                'title' => $task['title'] ?? null,
+                'order_id' => $task['order_id'] ?? null,
+                'due_at' => $task['due_at'] ?? null,
+            ];
+            $this->notificationService->batchSendTaskUpdated($targets, $taskData, $changes, $operatorId);
+        } catch (\Throwable $e) {
+            error_log('notifyFollowersOnUpdate failed for task #' . $taskId . ': ' . $e->getMessage());
+        }
+    }
+
+    public function notifyFollowed(int $userId, int $taskId, string $taskTitle): void
+    {
+        try {
+            $this->notificationService->sendTaskFollowed($userId, $taskId, $taskTitle, $userId);
+        } catch (\Throwable $e) {
+            error_log('notifyFollowed failed for user #' . $userId . ': ' . $e->getMessage());
+        }
+    }
+
+    public function isTaskFollowed(int $taskId, int $userId): bool
+    {
+        if ($taskId <= 0 || $userId <= 0) {
+            return false;
+        }
+        return (bool)Db::table('task_followers')
+            ->where('task_id', $taskId)
+            ->where('user_id', $userId)
+            ->find();
     }
 
     public function copyTask(int $sourceTaskId, int $operatorId): array

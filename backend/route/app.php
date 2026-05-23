@@ -44,6 +44,10 @@ Route::group('api', function () {
     Route::post('tasks/:id/urge', '\app\api\controller\Task@urge');
     Route::post('tasks/:id/copy', '\app\api\controller\Task@copy');
     Route::post('tasks/:id/status', '\app\api\controller\Task@updateStatus');
+    Route::post('tasks/:id/follow', '\app\api\controller\Task@follow');
+    Route::post('tasks/:id/unfollow', '\app\api\controller\Task@unfollow');
+    Route::get('tasks/:id/follow-status', '\app\api\controller\Task@followStatus');
+    Route::get('tasks/followed', '\app\api\controller\Task@followedTasks');
     Route::get('tasks/:id', '\app\api\controller\Task@read');
     Route::get('tasks', '\app\api\controller\Task@index');
     Route::post('tasks', '\app\api\controller\Task@save');

@@ -19,6 +19,8 @@ class NotificationService
     const TEMPLATE_ORDER_CREATED = 'order_created';
     const TEMPLATE_TASK_ASSIGNED = 'task_assigned';
     const TEMPLATE_TASK_URGED = 'task_urged';
+    const TEMPLATE_TASK_UPDATED = 'task_updated';
+    const TEMPLATE_TASK_FOLLOWED = 'task_followed';
     const TEMPLATE_LEAVE_APPROVED = 'leave_approved';
     const TEMPLATE_REIMBURSE_APPROVED = 'reimburse_approved';
     const TEMPLATE_LEAVE_REJECTED = 'leave_rejected';
@@ -28,6 +30,8 @@ class NotificationService
         self::TEMPLATE_TASK_ASSIGNED,
         self::TEMPLATE_TASK_URGED,
         self::TEMPLATE_ORDER_CREATED,
+        self::TEMPLATE_TASK_UPDATED,
+        self::TEMPLATE_TASK_FOLLOWED,
     ];
 
     const APPROVAL_TEMPLATE_CODES = [
@@ -75,6 +79,132 @@ class NotificationService
                 'order_pi_number' => $piNumber,
                 'customer_name' => $order['customer_name'] ?? null,
                 'initiator_id' => $initiatorId,
+            ],
+        ]);
+    }
+
+    public function sendTaskUpdated(int $userId, array $task, array $changes = [], ?int $operatorId = null): void
+    {
+        $typeMap = [
+            'procurement' => '采购任务',
+            'nameplate' => '铭牌制作',
+            'machine_data' => '机器数据',
+            'acceptance' => '机器验收',
+            'packaging' => '打包唛头',
+            'shipment' => '装柜发货',
+            'inspection' => '客户验厂',
+            'temporary' => '临时任务',
+            'factory_order' => '工厂订单',
+            'fee' => '费用',
+            'document' => '资料',
+            'announcement' => '公告',
+        ];
+        $typeLabel = $typeMap[$task['type'] ?? ''] ?? '任务';
+        $title = '任务变更通知';
+        $summary = $this->summarizeTaskChanges($changes);
+        $content = sprintf('您关注的%s「%s」已更新。%s', $typeLabel, $task['title'] ?? '', $summary);
+
+        $this->createNotification($userId, [
+            'channel' => self::CHANNEL_SYSTEM,
+            'template_code' => self::TEMPLATE_TASK_UPDATED,
+            'title' => $title,
+            'content' => $content,
+            'payload' => [
+                'type' => 'task_updated',
+                'task_id' => $task['id'] ?? null,
+                'task_title' => $task['title'] ?? null,
+                'task_type' => $task['type'] ?? null,
+                'order_id' => $task['order_id'] ?? null,
+                'operator_id' => $operatorId,
+                'changes' => $changes,
+                'due_at' => $task['due_at'] ?? null,
+            ],
+        ]);
+    }
+
+    public function batchSendTaskUpdated(array $userIds, array $task, array $changes = [], ?int $operatorId = null): void
+    {
+        if (empty($userIds)) {
+            return;
+        }
+        $typeMap = [
+            'procurement' => '采购任务',
+            'nameplate' => '铭牌制作',
+            'machine_data' => '机器数据',
+            'acceptance' => '机器验收',
+            'packaging' => '打包唛头',
+            'shipment' => '装柜发货',
+            'inspection' => '客户验厂',
+            'temporary' => '临时任务',
+            'factory_order' => '工厂订单',
+            'fee' => '费用',
+            'document' => '资料',
+            'announcement' => '公告',
+        ];
+        $typeLabel = $typeMap[$task['type'] ?? ''] ?? '任务';
+        $summary = $this->summarizeTaskChanges($changes);
+        $content = sprintf('您关注的%s「%s」已更新。%s', $typeLabel, $task['title'] ?? '', $summary);
+        $this->batchCreateNotifications(array_values(array_unique(array_map('intval', $userIds))), [
+            'channel' => self::CHANNEL_SYSTEM,
+            'template_code' => self::TEMPLATE_TASK_UPDATED,
+            'title' => '任务变更通知',
+            'content' => $content,
+            'payload' => [
+                'type' => 'task_updated',
+                'task_id' => $task['id'] ?? null,
+                'task_title' => $task['title'] ?? null,
+                'task_type' => $task['type'] ?? null,
+                'order_id' => $task['order_id'] ?? null,
+                'operator_id' => $operatorId,
+                'changes' => $changes,
+                'due_at' => $task['due_at'] ?? null,
+            ],
+        ]);
+    }
+
+    protected function summarizeTaskChanges(array $changes): string
+    {
+        if (empty($changes)) {
+            return '';
+        }
+        $labels = [
+            'status' => '状态',
+            'assigned_to' => '负责人',
+            'due_at' => '截止时间',
+            'start_at' => '开始时间',
+            'priority' => '优先级',
+            'description' => '说明',
+            'completed_at' => '完成时间',
+            'need_audit' => '需要审核',
+        ];
+        $parts = [];
+        foreach ($changes as $key => $value) {
+            if ($key === 'updated_at') {
+                continue;
+            }
+            $label = $labels[$key] ?? $key;
+            $parts[] = $label;
+        }
+        if (!$parts) {
+            return '';
+        }
+        return '变更字段：' . implode('、', $parts) . '。';
+    }
+
+    public function sendTaskFollowed(int $userId, int $taskId, string $taskTitle, ?int $operatorId = null): void
+    {
+        $title = '任务已关注';
+        $content = sprintf('您已成功关注任务「%s」，后续该任务的变更会通知到您。', $taskTitle);
+        $this->createNotification($userId, [
+            'channel' => self::CHANNEL_SYSTEM,
+            'template_code' => self::TEMPLATE_TASK_FOLLOWED,
+            'title' => $title,
+            'content' => $content,
+            'payload' => [
+                'type' => 'task_followed',
+                'task_id' => $taskId,
+                'task_title' => $taskTitle,
+                'operator_id' => $operatorId,
             ],
         ]);
     }

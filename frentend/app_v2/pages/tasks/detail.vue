@@ -66,6 +66,14 @@
       <view class="actions">
         <button class="outline" @click="openChat">沟通</button>
         <button v-if="canCopyTask" class="outline" :loading="copyingTask" @click="copyTask">复制任务</button>
+        <button
+          class="follow-btn"
+          :class="{ followed: isFollowed }"
+          :loading="togglingFollow"
+          @click="toggleFollow"
+        >
+          {{ isFollowed ? '已关注' : '关注' }}
+        </button>
         <button v-if="canUrgeTask" class="primary" :loading="urgingTask" @click="urgeTask">催办一次</button>
       </view>
     </view>
@@ -342,6 +350,8 @@ const auditComment = ref('')
 const auditProcessing = ref(false)
 const urgingTask = ref(false)
 const copyingTask = ref(false)
+const togglingFollow = ref(false)
+const isFollowed = ref(false)
 const profile = computed(() => store.state.profile || {})
 const isAdminDept = computed(() => {
   const type = profile.value?.dept?.type
@@ -741,6 +751,7 @@ const fetchTaskDetail = async (id) => {
       return
     }
     task.value = taskData
+    isFollowed.value = !!taskData.followed
     rawLogs.value = res.logs || []
     updateFormattedLogs()
     existingAttachments.value = (res.attachments || []).map((item) => ({
@@ -1311,6 +1322,28 @@ const copyTask = async () => {
     }
   })
 }
+
+const toggleFollow = async () => {
+  if (!task.value?.id || togglingFollow.value) return
+  togglingFollow.value = true
+  try {
+    if (isFollowed.value) {
+      await api.unfollowTask(task.value.id)
+      isFollowed.value = false
+      uni.showToast({ title: '已取消关注', icon: 'success' })
+    } else {
+      await api.followTask(task.value.id)
+      isFollowed.value = true
+      uni.showToast({ title: '已关注，将收到变更通知', icon: 'success' })
+    }
+  } catch (error) {
+    console.error(error)
+    const msg = (error && error.message) || '操作失败，请重试'
+    uni.showToast({ title: msg, icon: 'none' })
+  } finally {
+    togglingFollow.value = false
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -1426,6 +1459,18 @@ const copyTask = async () => {
   background: #fff;
   border-radius: 28rpx;
   padding: 0 32rpx;
+}
+.follow-btn {
+  border: 1rpx solid #ffd591;
+  color: #d46b08;
+  background: #fff7e6;
+  border-radius: 28rpx;
+  padding: 0 32rpx;
+}
+.follow-btn.followed {
+  border: 1rpx solid #b7eb8f;
+  color: #389e0d;
+  background: #f6ffed;
 }
 .section-title {
   font-size: 28rpx;

@@ -94,15 +94,7 @@ class Task extends ApiController
                 ->where('t.status', 'waiting_audit');
         }
 
-        if (!$isAdminDept) {
-            $query->where(function ($q) use ($user) {
-                $q->where('t.created_by', $user['id'])
-                    ->whereOr('t.assigned_to', $user['id'])
-                    ->whereOr(function ($sub) use ($user) {
-                        $sub->whereRaw('(o.initiator_id = ? OR o.sales_owner_id = ?)', [$user['id'], $user['id']]);
-                    });
-            });
-        }
+        $this->applyVisibilityFilter($query, $user, $isAdminDept);
 
         $rows = $query->field([
             't.*',
@@ -263,7 +255,7 @@ class Task extends ApiController
                     ->find();
 
                 if ($existingUsage) {
-                    $this->taskService->updateProcurement($taskId, $procurementPayload);
+                    $this->taskService->updateProcurement($taskId, $procurementPayload, (int)$user['id']);
                     if (!empty($payload['status'])) {
                         $this->taskService->updateTask($taskId, [
                             'status' => $payload['status'],
@@ -326,7 +318,7 @@ class Task extends ApiController
                 ]);
             }
 
-            $this->taskService->updateProcurement($taskId, $procurementPayload);
+            $this->taskService->updateProcurement($taskId, $procurementPayload, (int)$user['id']);
 
             if (!empty($payload['status'])) {
                 $this->taskService->updateTask($taskId, [
@@ -442,6 +434,190 @@ class Task extends ApiController
         return $this->success(['task_id' => $result['task_id']], $result['message']);
     }
 
+    public function follow($id)
+    {
+        $taskId = (int)$id;
+        $user = $this->user();
+        $userId = (int)$user['id'];
+        if ($userId <= 0) {
+            $this->errorResponse('请先登录后再关注任务', 401);
+        }
+        $taskRow = Db::table('tasks')->alias('t')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->field([
+                't.*',
+                'o.initiator_id as order_initiator_id',
+                'o.sales_owner_id as order_sales_owner_id',
+            ])
+            ->where('t.id', $taskId)
+            ->find();
+        if (!$taskRow) {
+            $this->errorResponse('任务不存在', 404);
+        }
+        if (!$this->canViewTask($taskRow, $user)) {
+            $this->errorResponse('暂无权限操作该任务', 403);
+        }
+        $exists = Db::table('task_followers')
+            ->where('task_id', $taskId)
+            ->where('user_id', $userId)
+            ->find();
+        if (!$exists) {
+            try {
+                Db::table('task_followers')->insert([
+                    'task_id' => $taskId,
+                    'user_id' => $userId,
+                    'created_at' => date('Y-m-d H:i:s'),
+                ]);
+            } catch (\Throwable $e) {
+                $exists = Db::table('task_followers')
+                    ->where('task_id', $taskId)
+                    ->where('user_id', $userId)
+                    ->find();
+                if (!$exists) {
+                    $this->errorResponse('关注失败，请稍后重试');
+                }
+            }
+        }
+        try {
+            $this->taskService->notifyFollowed($userId, $taskId, (string)$taskRow['title']);
+        } catch (\Throwable $e) {
+            error_log('Task follow notification failed for user #' . $userId . ' on task #' . $taskId . ': ' . $e->getMessage());
+        }
+        return $this->success([
+            'task_id' => $taskId,
+            'followed' => true,
+        ], '已关注任务');
+    }
+
+    public function unfollow($id)
+    {
+        $taskId = (int)$id;
+        $user = $this->user();
+        $userId = (int)$user['id'];
+        if ($userId <= 0) {
+            $this->errorResponse('请先登录', 401);
+        }
+        $taskRow = Db::table('tasks')->alias('t')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->field([
+                't.*',
+                'o.initiator_id as order_initiator_id',
+                'o.sales_owner_id as order_sales_owner_id',
+            ])
+            ->where('t.id', $taskId)
+            ->find();
+        if (!$taskRow) {
+            $this->errorResponse('任务不存在', 404);
+        }
+        if (!$this->canViewTask($taskRow, $user)) {
+            $this->errorResponse('暂无权限操作该任务', 403);
+        }
+        Db::table('task_followers')
+            ->where('task_id', $taskId)
+            ->where('user_id', $userId)
+            ->delete();
+        return $this->success([
+            'task_id' => $taskId,
+            'followed' => false,
+        ], '已取消关注');
+    }
+
+    public function followStatus($id)
+    {
+        $taskId = (int)$id;
+        $user = $this->user();
+        $userId = (int)$user['id'];
+        $taskRow = Db::table('tasks')->alias('t')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->field([
+                't.*',
+                'o.initiator_id as order_initiator_id',
+                'o.sales_owner_id as order_sales_owner_id',
+            ])
+            ->where('t.id', $taskId)
+            ->find();
+        if (!$taskRow) {
+            $this->errorResponse('任务不存在', 404);
+        }
+        if (!$this->canViewTask($taskRow, $user)) {
+            $this->errorResponse('暂无权限查看该任务', 403);
+        }
+        $followed = false;
+        if ($userId > 0) {
+            $followed = (bool)Db::table('task_followers')
+                ->where('task_id', $taskId)
+                ->where('user_id', $userId)
+                ->find();
+        }
+        $count = (int)Db::table('task_followers')->where('task_id', $taskId)->count();
+        return $this->success([
+            'task_id' => $taskId,
+            'followed' => $followed,
+            'count' => $count,
+        ]);
+    }
+
+    public function followedTasks()
+    {
+        $user = $this->user();
+        $userId = (int)$user['id'];
+        if ($userId <= 0) {
+            return $this->success(['items' => [], 'total' => 0]);
+        }
+        $isAdminDept = \user_belongs_to_admin_dept($user);
+        $query = Db::table('task_followers')->alias('tf')
+            ->leftJoin('tasks t', 't.id = tf.task_id')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->leftJoin('users au', 'au.id = t.assigned_to')
+            ->leftJoin('users cu', 'cu.id = t.created_by')
+            ->leftJoin('task_procurements tp', 'tp.task_id = t.id')
+            ->where('tf.user_id', $userId);
+
+        $this->applyVisibilityFilter($query, $user, $isAdminDept);
+
+        if ($status = Request::get('status')) {
+            $query->where('t.status', $status);
+        }
+        if ($type = Request::get('type')) {
+            $query->where('t.type', $type);
+        }
+        if ($keyword = Request::get('keyword')) {
+            $query->where(function ($q) use ($keyword) {
+                $q->whereLike('t.title', "%{$keyword}%")
+                    ->whereOr('t.description', 'like', "%{$keyword}%")
+                    ->whereOr('o.pi_number', 'like', "%{$keyword}%")
+                    ->whereOr('o.customer_name', 'like', "%{$keyword}%");
+            });
+        }
+
+        $total = (int)$query->count();
+        $rows = $query->field([
+            't.*',
+            'o.pi_number as order_pi_number',
+            'o.customer_name as order_customer_name',
+            'au.name as assignee_name',
+            'cu.name as creator_name',
+            'tp.supplier_id',
+            'tp.supplier_name',
+            'tp.purchase_price',
+            'tp.currency as procurement_currency',
+            'tp.source_location',
+            'tp.purchase_status',
+            'tp.delivery_date',
+        ])
+            ->order('tf.created_at', 'desc')
+            ->order('t.id', 'desc')
+            ->select()
+            ->toArray();
+
+        $tasks = $this->taskService->formatTaskList($rows, \user_belongs_to_admin_dept($user));
+
+        return $this->success([
+            'items' => $tasks,
+            'total' => $total,
+        ]);
+    }
+
     protected function canUrgeTask(array $taskRow, array $user): bool
     {
         if (\user_belongs_to_admin_dept($user)) {
@@ -496,6 +672,8 @@ class Task extends ApiController
             $this->errorResponse('暂无权限查看该任务', 403);
         }
         $task = $this->taskService->formatTaskList([$row], \user_belongs_to_admin_dept($user));
+        $followed = $this->taskService->isTaskFollowed($id, (int)$user['id']);
+        $task[0]['followed'] = $followed;
         $logs = Db::table('task_logs')
             ->where('task_id', $id)
             ->order('id', 'desc')
@@ -538,20 +716,66 @@ class Task extends ApiController
         ]);
     }
 
+    /**
+     * 任务可见性判定规则（单一规则源）：
+     * 当满足以下任一条件时用户可见：
+     *   1. 用户是任务创建人
+     *   2. 用户是任务负责人
+     *   3. 用户是关联订单的发起人或销售负责人
+     * 管理员部门用户不受此限制（由调用方另行判断）。
+     *
+     * 注意：此方法同时被 {@see Task::canViewTask()} 与 {@see Task::applyVisibilityFilter()} 共同复用；
+     * 如需修改可见性规则，仅改此处，另一处会自动对齐。
+     */
+    private function isVisibleToUser(array $taskRow, int $userId): bool
+    {
+        if ((int)$taskRow['created_by'] === $userId) {
+            return true;
+        }
+        if ((int)($taskRow['assigned_to'] ?? 0) === $userId) {
+            return true;
+        }
+        if (!empty($taskRow['order_id'])) {
+            if ((int)($taskRow['order_initiator_id'] ?? 0) === $userId) {
+                return true;
+            }
+            if ((int)($taskRow['order_sales_owner_id'] ?? 0) === $userId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 在查询上追加任务可见性过滤。
+     * 过滤规则与 {@see Task::isVisibleToUser()} 完全一致，两者共用同一规则源，避免口径漂移。
+     *
+     * 依赖约定：查询中必须使用以下表别名：
+     *   - tasks 表别名为 `t`，并包含字段 id / created_by / assigned_to / order_id
+     *   - orders 表别名为 `o`，通过 LEFT JOIN o ON o.id = t.order_id 关联，
+     *     并包含字段 initiator_id / sales_owner_id
+     * 若别名不一致请修改查询或在本方法中参数化别名。
+     */
+    protected function applyVisibilityFilter($query, array $user, bool $isAdminDept): void
+    {
+        if ($isAdminDept) {
+            return;
+        }
+        $userId = (int)$user['id'];
+        $query->where(function ($q) use ($userId) {
+            $q->where('t.created_by', $userId)
+                ->whereOr('t.assigned_to', $userId)
+                ->whereOr(function ($sub) use ($userId) {
+                    $sub->whereRaw('(o.initiator_id = ? OR o.sales_owner_id = ?)', [$userId, $userId]);
+                });
+        });
+    }
+
     protected function canViewTask(array $taskRow, array $user): bool
     {
         if (\user_belongs_to_admin_dept($user)) {
             return true;
         }
-        $userId = (int)$user['id'];
-        if ((int)$taskRow['created_by'] === $userId || (int)($taskRow['assigned_to'] ?? 0) === $userId) {
-            return true;
-        }
-        if (!empty($taskRow['order_id'])) {
-            if ((int)($taskRow['order_initiator_id'] ?? 0) === $userId || (int)($taskRow['order_sales_owner_id'] ?? 0) === $userId) {
-                return true;
-            }
-        }
-        return false;
+        return $this->isVisibleToUser($taskRow, (int)$user['id']);
     }
 }
