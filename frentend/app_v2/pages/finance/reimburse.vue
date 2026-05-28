@@ -50,6 +50,50 @@
         <textarea v-model="form.remark" placeholder="请输入报销说明" />
       </view>
     </view>
+    <view class="card" v-if="budgetInfo">
+      <view class="section-title">
+        预算信息
+        <text class="budget-source-tag">{{ getBudgetSourceLabel(budgetInfo) }}</text>
+      </view>
+      <view class="budget-bar">
+        <view class="budget-row">
+          <text class="budget-label">预算额度</text>
+          <text class="budget-value">¥{{ budgetInfo.budget_amount.toFixed(2) }}</text>
+        </view>
+        <view class="budget-row">
+          <text class="budget-label">已用金额</text>
+          <text class="budget-value" :class="{ danger: budgetInfo.usage_percent >= 90 }">¥{{ budgetInfo.used_amount.toFixed(2) }}</text>
+        </view>
+        <view class="budget-row estimate-row" v-if="currentAmountForBudget > 0">
+          <text class="budget-label">本次填写</text>
+          <text class="budget-value estimate-value">+¥{{ currentAmountForBudget.toFixed(2) }}</text>
+        </view>
+        <view class="budget-row" v-if="currentAmountForBudget > 0">
+          <text class="budget-label">预估总占用</text>
+          <text class="budget-value" :class="{ danger: estimatedUsagePercent >= 100 }">¥{{ (budgetInfo.used_amount + currentAmountForBudget).toFixed(2) }}</text>
+        </view>
+        <view class="budget-row">
+          <text class="budget-label">{{ currentAmountForBudget > 0 ? '预估剩余' : '剩余金额' }}</text>
+          <text class="budget-value" :class="{ danger: estimatedRemainAmount < 0 }">¥{{ estimatedRemainAmount.toFixed(2) }}</text>
+        </view>
+        <view class="budget-progress">
+          <view class="progress-track">
+            <view class="progress-fill" :style="{ width: Math.min(budgetInfo.usage_percent, 100) + '%' }" :class="budgetUsageClass"></view>
+            <view class="progress-estimate-fill" v-if="currentAmountForBudget > 0" :style="{ width: estimatedProgressWidth + '%', left: budgetInfo.usage_percent + '%' }" :class="estimatedProgressClass"></view>
+          </view>
+          <text class="progress-text">{{ estimatedUsagePercent }}%</text>
+        </view>
+      </view>
+    </view>
+    <view class="card warning-card" v-if="preCheckViolations.length > 0">
+      <view class="section-title warning-title">校验提醒</view>
+      <view class="violation-item" v-for="(v, idx) in preCheckViolations" :key="idx">
+        <view class="violation-icon">
+          <uni-icons type="info" size="28" color="#fa8c16" />
+        </view>
+        <text class="violation-text">{{ v.message }}</text>
+      </view>
+    </view>
     <view class="card">
       <view class="section-header">
         <view class="section-title">票据上传</view>
@@ -378,6 +422,47 @@ const isAllSelected = computed(() => {
   return uploadedFiles.value.length > 0 && selectedFileIds.value.length === uploadedFiles.value.length
 })
 
+const budgetUsageClass = computed(() => {
+  if (!budgetInfo.value) return ''
+  const pct = budgetInfo.value.usage_percent
+  if (pct >= 90) return 'danger'
+  if (pct >= 70) return 'warning'
+  return 'safe'
+})
+
+const currentAmountForBudget = computed(() => {
+  const val = parseFloat(form.amount)
+  return isNaN(val) ? 0 : Math.max(0, val)
+})
+
+const estimatedUsagePercent = computed(() => {
+  if (!budgetInfo.value) return 0
+  const budget = budgetInfo.value
+  const total = budget.used_amount + currentAmountForBudget.value
+  const pct = budget.budget_amount > 0 ? (total / budget.budget_amount * 100) : 0
+  return Math.round(pct * 10) / 10
+})
+
+const estimatedProgressWidth = computed(() => {
+  if (!budgetInfo.value) return 0
+  const budget = budgetInfo.value
+  const estimatedPct = currentAmountForBudget.value / budget.budget_amount * 100
+  return Math.min(estimatedPct, Math.max(0, 100 - budget.usage_percent))
+})
+
+const estimatedProgressClass = computed(() => {
+  const pct = estimatedUsagePercent.value
+  if (pct >= 100) return 'danger'
+  if (pct >= 90) return 'warning'
+  return 'safe'
+})
+
+const estimatedRemainAmount = computed(() => {
+  if (!budgetInfo.value) return 0
+  const remain = budgetInfo.value.budget_amount - budgetInfo.value.used_amount - currentAmountForBudget.value
+  return Math.round(remain * 100) / 100
+})
+
 const getFileById = (id) => {
   return uploadedFiles.value.find(f => f.id === id)
 }
@@ -524,11 +609,20 @@ const chooseFile = () =>
 const onTypeChange = (e) => {
   currentType.value = types[e.detail.value]
   form.type = currentType.value.value
+  fetchBudgetStatus()
+  if (form.amount && Number(form.amount) > 0) {
+    runPreCheck()
+  } else {
+    preCheckViolations.value = []
+  }
 }
 
 const removeFile = (index) => {
   uploadedFiles.value.splice(index, 1)
   form.receipt_media_ids.splice(index, 1)
+  if (form.amount && Number(form.amount) > 0) {
+    runPreCheck()
+  }
 }
 
 const removeFileById = (id) => {
@@ -601,6 +695,9 @@ const batchDelete = () => {
           selectMode.value = false
         }
         uni.showToast({ title: '删除成功', icon: 'success' })
+        if (form.amount && Number(form.amount) > 0) {
+          runPreCheck()
+        }
       }
     }
   })
@@ -794,6 +891,9 @@ const upload = async () => {
     
     if (uploadedFiles.value.length > 0) {
       uni.showToast({ title: '上传成功', icon: 'success' })
+      if (form.amount && Number(form.amount) > 0) {
+        runPreCheck()
+      }
     }
   } catch (error) {
     if (error?.errMsg && error.errMsg.includes('cancel')) {
@@ -823,17 +923,17 @@ const submit = async () => {
       payload.receipt_media_ids = form.receipt_media_ids
     }
     
-    await api.createReimburse(payload)
+    const res = await api.createReimburse(payload)
+
+    if (res.submitted === false && res.violations && res.violations.length > 0) {
+      submitting.value = false
+      showViolationConfirm(res.violations, payload)
+      return
+    }
+
     uni.showToast({ title: '报销已提交', icon: 'success' })
     
-    form.amount = ''
-    form.remark = ''
-    form.receipt_media_ids = []
-    uploadedFiles.value = []
-    
-    setTimeout(() => {
-      fetchList(true)
-    }, 1000)
+    handleSubmitSuccess()
   } catch (error) {
     uni.showToast({ title: '提交失败', icon: 'none' })
   } finally {
@@ -841,10 +941,188 @@ const submit = async () => {
   }
 }
 
+const showViolationConfirm = (violations, payload) => {
+  const messages = violations.map(v => v.message).join('\n')
+  uni.showModal({
+    title: '报销校验提醒',
+    content: messages,
+    confirmText: '仍然提交',
+    cancelText: '取消',
+    success: async (res) => {
+      if (res.confirm) {
+        submitting.value = true
+        try {
+          payload.force_submit = true
+          await api.createReimburse(payload)
+          uni.showToast({ title: '报销已提交', icon: 'success' })
+          handleSubmitSuccess()
+        } catch (error) {
+          uni.showToast({ title: '提交失败', icon: 'none' })
+        } finally {
+          submitting.value = false
+        }
+      }
+    }
+  })
+}
+
+const budgetInfo = ref(null)
+const preCheckViolations = ref([])
+
+let budgetReqVersion = 0
+let preCheckReqVersion = 0
+let isFormActive = true
+
+const typeLabelMap = {
+  travel: '差旅费用',
+  purchase: '采购费用'
+}
+
 const getTypeLabel = (type) => {
   const option = types.find(opt => opt.value === type)
-  return option ? option.label : type
+  if (option) return option.label
+  return typeLabelMap[type] || type
 }
+
+const invalidatePendingRequests = () => {
+  isFormActive = false
+  setTimeout(() => {
+    isFormActive = true
+  }, 0)
+  budgetReqVersion++
+  preCheckReqVersion++
+}
+
+const takeFormSnapshot = () => {
+  return {
+    type: form.type,
+    amount: Number(form.amount) || 0,
+    receiptIds: [...form.receipt_media_ids],
+    receiptKey: form.receipt_media_ids.slice().sort().join('|')
+  }
+}
+
+const isSnapshotValid = (snapshot) => {
+  const current = takeFormSnapshot()
+  return snapshot.type === current.type &&
+         Math.abs(snapshot.amount - current.amount) < 0.001 &&
+         snapshot.receiptKey === current.receiptKey
+}
+
+const handleSubmitSuccess = () => {
+  form.amount = ''
+  form.remark = ''
+  form.receipt_media_ids = []
+  uploadedFiles.value = []
+  preCheckViolations.value = []
+  invalidatePendingRequests()
+  fetchBudgetStatus()
+  
+  setTimeout(() => {
+    fetchList(true)
+  }, 1000)
+}
+
+const getBudgetSourceLabel = (info) => {
+  if (!info) return ''
+  const budgetDeptId = info.budget_dept_id
+  const budgetType = info.budget_type
+  const currentType = info.type
+  
+  const hasDeptBudget = budgetDeptId && budgetDeptId === info.dept_id
+  const isGlobalBudget = !budgetDeptId || budgetDeptId === 0
+  const isAllTypeBudget = budgetType === ''
+  
+  let sourceLabel = ''
+  if (hasDeptBudget && !isAllTypeBudget && budgetType === currentType) {
+    sourceLabel = '部门专属预算'
+  } else if (hasDeptBudget && isAllTypeBudget) {
+    sourceLabel = '部门通用预算'
+  } else if (isGlobalBudget && !isAllTypeBudget && budgetType === currentType) {
+    sourceLabel = '全局类型预算'
+  } else if (isGlobalBudget && isAllTypeBudget) {
+    sourceLabel = '全局通用预算'
+  } else {
+    sourceLabel = '匹配预算'
+  }
+  
+  const deptLabel = isGlobalBudget ? '全局' : '本部门'
+  const typeLabel = isAllTypeBudget ? '所有类型' : getTypeLabel(budgetType)
+  
+  return `${deptLabel} / ${typeLabel} / ${sourceLabel}`
+}
+
+const fetchBudgetStatus = async () => {
+  if (!form.type) {
+    budgetInfo.value = null
+    return
+  }
+  const snapshot = takeFormSnapshot()
+  const reqVersion = ++budgetReqVersion
+  
+  try {
+    const res = await api.reimburseBudgetStatus({ type: snapshot.type })
+    
+    if (reqVersion !== budgetReqVersion || !isFormActive) {
+      return
+    }
+    if (!isSnapshotValid(snapshot)) {
+      return
+    }
+    
+    budgetInfo.value = res.has_budget ? res : null
+  } catch (e) {
+    if (reqVersion === budgetReqVersion && isFormActive && isSnapshotValid(snapshot)) {
+      budgetInfo.value = null
+    }
+  }
+}
+
+const runPreCheck = async () => {
+  if (!form.type || !form.amount || Number(form.amount) <= 0) {
+    preCheckViolations.value = []
+    return
+  }
+  const snapshot = takeFormSnapshot()
+  const reqVersion = ++preCheckReqVersion
+  
+  try {
+    const payload = {
+      type: snapshot.type,
+      amount: snapshot.amount
+    }
+    if (snapshot.receiptIds.length > 0) {
+      payload.receipt_media_ids = snapshot.receiptIds
+    }
+    const res = await api.reimbursePreCheck(payload)
+    
+    if (reqVersion !== preCheckReqVersion || !isFormActive) {
+      return
+    }
+    if (!isSnapshotValid(snapshot)) {
+      return
+    }
+    
+    preCheckViolations.value = res.violations || []
+  } catch (e) {
+    if (reqVersion === preCheckReqVersion && isFormActive && isSnapshotValid(snapshot)) {
+      preCheckViolations.value = []
+    }
+  }
+}
+
+let preCheckTimer = null
+watch(() => form.amount, (val) => {
+  if (preCheckTimer) clearTimeout(preCheckTimer)
+  const numVal = parseFloat(val)
+  if (!val || isNaN(numVal) || numVal <= 0) {
+    preCheckViolations.value = []
+    return
+  }
+  preCheckTimer = setTimeout(() => {
+    runPreCheck()
+  }, 600)
+})
 
 const getStatusLabel = (status) => {
   const statusMap = {
@@ -1008,6 +1286,7 @@ const findAndShowDetailById = async (id) => {
 onShow(() => {
   detailItem.value = null
   fetchList(true)
+  fetchBudgetStatus()
 
   const params = getUrlParams()
   if (params.id) {
@@ -1041,6 +1320,18 @@ onShow(() => {
 .section-title {
   font-size: 30rpx;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.budget-source-tag {
+  font-size: 22rpx;
+  font-weight: 400;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
 }
 
 .section-actions {
@@ -1747,5 +2038,146 @@ textarea {
 
 .detail-value.status.rejected {
   color: #ff4d4f;
+}
+
+.budget-bar {
+  margin-top: 16rpx;
+}
+
+.budget-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.budget-label {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.budget-value {
+  font-size: 26rpx;
+  color: #333;
+  font-weight: 500;
+}
+
+.budget-value.danger {
+  color: #ff4d4f;
+}
+
+.budget-progress {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 8rpx;
+}
+
+.progress-track {
+  flex: 1;
+  height: 16rpx;
+  background: #f0f0f0;
+  border-radius: 8rpx;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 8rpx;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.safe {
+  background: #52c41a;
+}
+
+.progress-fill.warning {
+  background: #fa8c16;
+}
+
+.progress-fill.danger {
+  background: #ff4d4f;
+}
+
+.progress-estimate-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(250, 140, 22, 0.5),
+    rgba(250, 140, 22, 0.5) 10rpx,
+    rgba(250, 140, 22, 0.3) 10rpx,
+    rgba(250, 140, 22, 0.3) 20rpx
+  );
+  border-radius: 0 8rpx 8rpx 0;
+  transition: all 0.3s ease;
+}
+
+.progress-estimate-fill.danger {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 77, 79, 0.5),
+    rgba(255, 77, 79, 0.5) 10rpx,
+    rgba(255, 77, 79, 0.3) 10rpx,
+    rgba(255, 77, 79, 0.3) 20rpx
+  );
+}
+
+.progress-estimate-fill.safe {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(82, 196, 26, 0.5),
+    rgba(82, 196, 26, 0.5) 10rpx,
+    rgba(82, 196, 26, 0.3) 10rpx,
+    rgba(82, 196, 26, 0.3) 20rpx
+  );
+}
+
+.estimate-value {
+  color: #1890ff;
+}
+
+.estimate-row {
+  padding-left: 24rpx;
+  border-left: 4rpx solid #1890ff;
+}
+
+.progress-track {
+  position: relative;
+}
+
+.progress-text {
+  font-size: 24rpx;
+  color: #666;
+  min-width: 80rpx;
+  text-align: right;
+}
+
+.warning-card {
+  border: 2rpx solid #fa8c16;
+  background: #fff7e6;
+}
+
+.warning-title {
+  color: #fa8c16;
+}
+
+.violation-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.violation-icon {
+  flex-shrink: 0;
+  margin-top: 2rpx;
+}
+
+.violation-text {
+  font-size: 26rpx;
+  color: #8c6d1f;
+  line-height: 1.6;
 }
 </style>

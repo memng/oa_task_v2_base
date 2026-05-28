@@ -3,6 +3,7 @@
 namespace app\api\controller;
 
 use app\common\controller\ApiController;
+use app\common\service\ReimburseRuleService;
 use think\facade\Db;
 use think\facade\Request;
 
@@ -75,6 +76,17 @@ class Reimburse extends ApiController
             
             $receiptMediaIds = $validIds;
         }
+
+        $ruleService = new ReimburseRuleService();
+        $violations = $ruleService->checkAll($this->user()['id'], $type, $amount, $receiptMediaIds);
+
+        $forceSubmit = !empty($payload['force_submit']);
+        if (!empty($violations) && !$forceSubmit) {
+            return $this->success([
+                'violations' => $violations,
+                'submitted'  => false,
+            ], '存在规则校验警告，请确认后重新提交', 200);
+        }
         
         $firstMediaId = !empty($receiptMediaIds) ? $receiptMediaIds[0] : null;
         
@@ -91,8 +103,41 @@ class Reimburse extends ApiController
         $id = Db::table('expense_reports')->insertGetId($data);
         $report = Db::table('expense_reports')->find($id);
         return $this->success([
-            'report' => $this->formatReport($report),
+            'report'     => $this->formatReport($report),
+            'violations' => $violations,
+            'submitted'  => true,
         ], '报销申请已提交', 201);
+    }
+
+    public function preCheck()
+    {
+        $payload = $this->requestData();
+        $type = trim((string)($payload['type'] ?? ''));
+        $amount = isset($payload['amount']) ? (float)$payload['amount'] : 0;
+
+        if ($type === '' || $amount <= 0) {
+            return $this->success(['violations' => []]);
+        }
+
+        $receiptMediaIds = $this->parseReceiptMediaIds($payload);
+
+        $ruleService = new ReimburseRuleService();
+        $violations = $ruleService->checkAll($this->user()['id'], $type, $amount, $receiptMediaIds);
+
+        return $this->success([
+            'violations' => $violations,
+        ]);
+    }
+
+    public function budgetStatus()
+    {
+        $userId = $this->user()['id'];
+        $type = trim((string)Request::get('type', ''));
+
+        $ruleService = new ReimburseRuleService();
+        $status = $ruleService->getBudgetStatus($userId, $type);
+
+        return $this->success($status);
     }
 
     protected function validateAndFilterMediaIds(array $mediaIds): array

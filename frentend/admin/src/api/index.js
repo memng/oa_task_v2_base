@@ -203,5 +203,17 @@ export const api = {
   },
   orderBoardSummary(params = {}) {
     return client.get('/admin/order-board/summary', { params })
+  },
+  expenseBudgets(params = {}) {
+    return client.get('/admin/expense-budgets', { params })
+  },
+  createExpenseBudget(data) {
+    return client.post('/admin/expense-budgets', data)
+  },
+  updateExpenseBudget(id, data) {
+    return client.put(`/admin/expense-budgets/${id}`, data)
+  },
+  deleteExpenseBudget(id) {
+    return client.delete(`/admin/expense-budgets/${id}`)
   }
 }

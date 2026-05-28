@@ -163,6 +163,12 @@ export const api = {
   createReimburse(payload) {
     return request({ url: '/reimburse', method: 'POST', data: payload })
   },
+  reimbursePreCheck(payload) {
+    return request({ url: '/reimburse/pre-check', method: 'POST', data: payload })
+  },
+  reimburseBudgetStatus(params = {}) {
+    return request({ url: '/reimburse/budget-status', data: params })
+  },
   leaveList(params = {}) {
     return request({ url: '/leave', data: params })
   },

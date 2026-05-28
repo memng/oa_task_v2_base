@@ -29,6 +29,8 @@ Route::group('api', function () {
     Route::get('reimburse/:id', '\app\api\controller\Reimburse@read');
     Route::get('reimburse', '\app\api\controller\Reimburse@index');
     Route::post('reimburse', '\app\api\controller\Reimburse@save');
+    Route::post('reimburse/pre-check', '\app\api\controller\Reimburse@preCheck');
+    Route::get('reimburse/budget-status', '\app\api\controller\Reimburse@budgetStatus');
 
     Route::get('orders/stages', '\app\api\controller\Order@stages');
     Route::post('orders/:id/stage-transition', '\app\api\controller\Order@stageTransition');
@@ -134,6 +136,10 @@ Route::group('api', function () {
         Route::delete('suppliers/:id', '\app\admin\controller\Supplier@delete');
         Route::get('reimburse', '\app\admin\controller\Reimburse@index');
         Route::post('reimburse/:id/status', '\app\admin\controller\Reimburse@updateStatus');
+        Route::get('expense-budgets', '\app\admin\controller\ExpenseBudget@index');
+        Route::post('expense-budgets', '\app\admin\controller\ExpenseBudget@save');
+        Route::put('expense-budgets/:id', '\app\admin\controller\ExpenseBudget@update');
+        Route::delete('expense-budgets/:id', '\app\admin\controller\ExpenseBudget@delete');
         Route::get('leave', '\app\admin\controller\Leave@index');
         Route::post('leave/:id/status', '\app\admin\controller\Leave@updateStatus');
 
