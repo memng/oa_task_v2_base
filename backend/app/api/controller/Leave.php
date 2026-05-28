@@ -370,11 +370,19 @@ class Leave extends ApiController
                 $this->errorResponse('仅待审批状态的申请可撤回');
             }
 
+            $withdrawReason = $data['reason'] ?? '申请人主动撤回';
+            $now = date('Y-m-d H:i:s');
+
+            $approvalService = new ApprovalRuleService();
+            $approverIds = $approvalService->getRelevantApproversForWithdraw((int)$id);
+
             $updated = Db::table('leave_requests')
                 ->where('id', $id)
                 ->where('status', 'pending')
                 ->update([
-                    'status' => 'cancelled',
+                    'status'        => 'cancelled',
+                    'current_step'  => null,
+                    'cancel_reason' => $withdrawReason,
                 ]);
 
             if ($updated !== 1) {
@@ -385,9 +393,35 @@ class Leave extends ApiController
             Db::table('leave_approval_flows')
                 ->where('leave_request_id', $id)
                 ->where('status', 'pending')
-                ->update(['status' => 'auto_skipped', 'skip_reason' => 'withdrawn']);
+                ->update([
+                    'status'       => 'auto_skipped',
+                    'skip_reason'  => 'withdrawn',
+                    'approved_at'  => $now,
+                    'reason'       => $withdrawReason,
+                ]);
 
-            $this->logAudit($id, 'cancel', 'pending', 'cancelled', $userId, $data['reason'] ?? null);
+            $this->logAudit($id, 'cancel', 'pending', 'cancelled', $userId, $withdrawReason);
+
+            if (!empty($approverIds)) {
+                $applicant = Db::table('users')
+                    ->where('id', (int)$leaveRequest['user_id'])
+                    ->field('name, nickname')
+                    ->find();
+                $applicantName = $applicant ? ($applicant['name'] ?: $applicant['nickname']) : '未知申请人';
+
+                $leaveRequest['status'] = 'cancelled';
+                $leaveRequest['cancel_reason'] = $withdrawReason;
+
+                $notificationService = new NotificationService();
+                foreach ($approverIds as $approverId) {
+                    $notificationService->sendLeaveWithdrawn(
+                        (int)$approverId,
+                        $leaveRequest,
+                        $applicantName,
+                        $withdrawReason
+                    );
+                }
+            }
 
             Db::commit();
             return $this->success([], '申请已撤回');
@@ -467,6 +501,7 @@ class Leave extends ApiController
             'end_at' => $leaveRequest['end_at'],
             'duration_hours' => (float)$leaveRequest['duration_hours'],
             'reason' => $leaveRequest['reason'],
+            'cancel_reason' => $leaveRequest['cancel_reason'] ?? null,
             'status' => $leaveRequest['status'],
             'status_label' => $statusMap[$leaveRequest['status']] ?? '未知',
             'approver_id' => $leaveRequest['approver_id'] ? (int)$leaveRequest['approver_id'] : null,

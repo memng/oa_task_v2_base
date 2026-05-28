@@ -21,18 +21,27 @@
       </el-table-column>
       <el-table-column prop="duration_hours" label="时长(小时)" width="120" />
       <el-table-column prop="reason" label="事由" />
+      <el-table-column v-if="status === 'cancelled' || !status" prop="cancel_reason" label="撤回原因" min-width="150">
+        <template #default="{ row }">
+          <span v-if="row.cancel_reason" class="cancel-reason">{{ row.cancel_reason }}</span>
+          <span v-else>—</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" width="120">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="审批流程" width="280">
+      <el-table-column label="审批流程" width="320">
         <template #default="{ row }">
           <div v-if="row.approval_flows && row.approval_flows.length">
               <div v-for="flow in row.approval_flows" :key="flow.step_order" class="flow-step">
                 <span class="flow-step-name">{{ flow.step_name }}</span>
                 <span class="flow-step-approver">
-                  <template v-if="flow.approver_name">
+                  <template v-if="flow.skip_reason === 'withdrawn'">
+                    申请已撤回，流程终止
+                  </template>
+                  <template v-else-if="flow.approver_name">
                     {{ flow.approver_type_label || '审批人' }}：{{ flow.approver_name }}
                   </template>
                   <template v-else-if="flow.skip_reason_label">
@@ -42,7 +51,12 @@
                     {{ flow.approver_type_label || '审批人' }}：待分配
                   </template>
                 </span>
-                <el-tag size="small" :type="flowStatusType(flow.status)">{{ flow.status_label || flowStatusText(flow.status) }}</el-tag>
+                <el-tag size="small" :type="flowStatusType(flow.status, flow.skip_reason)">
+                  {{ flow.skip_reason === 'withdrawn' ? '已撤回' : (flow.status_label || flowStatusText(flow.status)) }}
+                </el-tag>
+              </div>
+              <div v-if="row.status === 'cancelled' && row.cancel_reason" class="flow-cancel-reason">
+                撤回原因：{{ row.cancel_reason }}
               </div>
             </div>
           <span v-else>—</span>
@@ -97,7 +111,8 @@ const flowStatusText = (value) => {
   return '待审批'
 }
 
-const flowStatusType = (value) => {
+const flowStatusType = (value, skipReason) => {
+  if (skipReason === 'withdrawn') return 'info'
   if (value === 'approved') return 'success'
   if (value === 'rejected') return 'danger'
   if (value === 'auto_skipped') return 'success'
@@ -138,5 +153,18 @@ onMounted(fetchList)
 .flow-step-approver {
   color: #333;
   font-weight: 500;
+}
+.flow-cancel-reason {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #909399;
+  border-left: 3px solid #dcdfe6;
+}
+.cancel-reason {
+  color: #909399;
+  font-size: 12px;
 }
 </style>

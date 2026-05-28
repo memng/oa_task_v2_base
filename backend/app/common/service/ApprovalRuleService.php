@@ -559,4 +559,55 @@ class ApprovalRuleService
         }
         return $currentFlow['approver_user_id'] == $userId;
     }
+
+    public function getAllApprovers(int $leaveRequestId): array
+    {
+        $flows = Db::table('leave_approval_flows')
+            ->where('leave_request_id', $leaveRequestId)
+            ->whereNotNull('approver_user_id')
+            ->order('step_order', 'asc')
+            ->select()
+            ->toArray();
+
+        $approvers = [];
+        foreach ($flows as $flow) {
+            $approverId = (int)$flow['approver_user_id'];
+            if ($approverId > 0 && !in_array($approverId, $approvers, true)) {
+                $approvers[] = $approverId;
+            }
+        }
+
+        return $approvers;
+    }
+
+    public function getRelevantApproversForWithdraw(int $leaveRequestId): array
+    {
+        $flows = Db::table('leave_approval_flows')
+            ->where('leave_request_id', $leaveRequestId)
+            ->where('status', self::FLOW_STATUS_PENDING)
+            ->whereNotNull('approver_user_id')
+            ->order('step_order', 'asc')
+            ->select()
+            ->toArray();
+
+        $approvers = [];
+        foreach ($flows as $flow) {
+            $approverId = (int)$flow['approver_user_id'];
+            if ($approverId > 0 && !in_array($approverId, $approvers, true)) {
+                $approvers[] = $approverId;
+            }
+        }
+
+        return $approvers;
+    }
+
+    public function getPendingFlows(int $leaveRequestId): array
+    {
+        return Db::table('leave_approval_flows')
+            ->where('leave_request_id', $leaveRequestId)
+            ->where('status', self::FLOW_STATUS_PENDING)
+            ->order('step_order', 'asc')
+            ->select()
+            ->toArray();
+    }
 }

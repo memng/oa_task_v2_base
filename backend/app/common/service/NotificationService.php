@@ -26,6 +26,7 @@ class NotificationService
     const TEMPLATE_LEAVE_REJECTED = 'leave_rejected';
     const TEMPLATE_REIMBURSE_REJECTED = 'reimburse_rejected';
     const TEMPLATE_LEAVE_APPROVAL_PENDING = 'leave_approval_pending';
+    const TEMPLATE_LEAVE_WITHDRAWN = 'leave_withdrawn';
 
     const TASK_TEMPLATE_CODES = [
         self::TEMPLATE_TASK_ASSIGNED,
@@ -41,6 +42,7 @@ class NotificationService
         self::TEMPLATE_REIMBURSE_APPROVED,
         self::TEMPLATE_REIMBURSE_REJECTED,
         self::TEMPLATE_LEAVE_APPROVAL_PENDING,
+        self::TEMPLATE_LEAVE_WITHDRAWN,
     ];
 
     public static function getBusinessType(?string $templateCode, ?string $payloadType = null): string
@@ -393,6 +395,48 @@ class NotificationService
                 'type' => 'leave_rejected',
                 'leave_type' => $leaveRequest['leave_type'] ?? null,
                 'leave_id' => $leaveRequest['id'] ?? null,
+                'reason' => $reason,
+            ],
+        ]);
+    }
+
+    public function sendLeaveWithdrawn(int $userId, array $leaveRequest, string $applicantName, ?string $reason = null): void
+    {
+        $typeMap = [
+            'annual' => '年假',
+            'sick' => '病假',
+            'personal' => '事假',
+            'other' => '其他',
+        ];
+        $typeLabel = $typeMap[$leaveRequest['leave_type'] ?? ''] ?? '请假';
+
+        $startDate = $leaveRequest['start_at'] ? date('m月d日 H:i', strtotime($leaveRequest['start_at'])) : '';
+        $endDate = $leaveRequest['end_at'] ? date('m月d日 H:i', strtotime($leaveRequest['end_at'])) : '';
+
+        $title = '请假申请已撤回';
+        $content = sprintf('%s已撤回%s申请。请假时间：%s 至 %s。',
+            $applicantName,
+            $typeLabel,
+            $startDate ?: '未知',
+            $endDate ?: '未知'
+        );
+        if ($reason) {
+            $content .= sprintf(' 撤回原因：%s', $reason);
+        }
+
+        $this->createNotification($userId, [
+            'channel' => self::CHANNEL_SYSTEM,
+            'template_code' => self::TEMPLATE_LEAVE_WITHDRAWN,
+            'title' => $title,
+            'content' => $content,
+            'payload' => [
+                'type' => 'leave_withdrawn',
+                'leave_id' => $leaveRequest['id'] ?? null,
+                'leave_type' => $leaveRequest['leave_type'] ?? null,
+                'applicant_id' => $leaveRequest['user_id'] ?? null,
+                'applicant_name' => $applicantName,
+                'start_at' => $leaveRequest['start_at'] ?? null,
+                'end_at' => $leaveRequest['end_at'] ?? null,
                 'reason' => $reason,
             ],
         ]);

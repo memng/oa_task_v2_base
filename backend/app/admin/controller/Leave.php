@@ -150,6 +150,7 @@ class Leave extends AdminApiController
             'end_at'         => $row['end_at'],
             'duration_hours' => (float)($row['duration_hours'] ?? 0),
             'reason'         => $row['reason'],
+            'cancel_reason'  => $row['cancel_reason'] ?? null,
             'status'         => $row['status'],
             'current_step'   => $row['current_step'] ?? null,
             'rule_id'        => $row['rule_id'] ?? null,

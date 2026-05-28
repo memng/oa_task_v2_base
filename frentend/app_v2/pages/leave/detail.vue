@@ -34,6 +34,10 @@
           <text class="label">请假事由</text>
           <text class="value reason">{{ detail.reason }}</text>
         </view>
+        <view class="info-row" v-if="detail.status === 'cancelled' && detail.cancel_reason">
+          <text class="label">撤回原因</text>
+          <text class="value reason cancel">{{ detail.cancel_reason }}</text>
+        </view>
       </view>
 
       <view class="info-section" v-if="detail.approval_flows && detail.approval_flows.length">
@@ -57,11 +61,21 @@
             <view class="flow-info">
               <view class="flow-step-name">{{ flow.step_name }}</view>
               <view class="flow-step-approver" v-if="flow.approver_name">{{ flow.approver_type_label || '审批人' }}：{{ flow.approver_name }}</view>
+              <view class="flow-step-approver" v-else-if="flow.skip_reason === 'withdrawn'">申请已撤回，流程终止</view>
               <view class="flow-step-approver" v-else-if="flow.skip_reason_label">{{ flow.skip_reason_label }}</view>
               <view class="flow-step-approver" v-else-if="flow.status === 'pending'">{{ flow.approver_type_label || '审批人' }}：待分配</view>
-              <view class="flow-step-status" v-if="flow.status_label">{{ flow.status_label }}</view>
+              <view class="flow-step-status" v-if="flow.status_label && flow.skip_reason !== 'withdrawn'">{{ flow.status_label }}</view>
+              <view class="flow-step-status withdrawn-status" v-if="flow.skip_reason === 'withdrawn'">已撤回</view>
               <view class="flow-step-time" v-if="flow.approved_at">{{ formatDateTime(flow.approved_at) }}</view>
-              <view class="flow-step-reason" v-if="flow.reason">备注：{{ flow.reason }}</view>
+              <view class="flow-step-reason" v-if="flow.reason && flow.skip_reason !== 'withdrawn'">备注：{{ flow.reason }}</view>
+              <view class="flow-step-reason withdrawn-reason" v-if="flow.reason && flow.skip_reason === 'withdrawn'">撤回原因：{{ flow.reason }}</view>
+            </view>
+          </view>
+          <view v-if="detail.status === 'cancelled' && detail.cancel_reason" class="flow-summary">
+            <view class="flow-summary-icon">⊘</view>
+            <view class="flow-summary-content">
+              <view class="flow-summary-title">申请已撤回</view>
+              <view class="flow-summary-reason">撤回原因：{{ detail.cancel_reason }}</view>
             </view>
           </view>
         </view>
@@ -186,12 +200,14 @@ const handleCancel = async () => {
 
   uni.showModal({
     title: '确认撤回',
+    editable: true,
+    placeholderText: '请输入撤回原因（可选）',
     content: '确定要撤回该请假申请吗？',
     success: async (res) => {
       if (res.confirm) {
         cancelling.value = true
         try {
-          await api.cancelLeave(detail.value.id)
+          await api.cancelLeave(detail.value.id, { reason: res.content || '' })
           uni.showToast({ title: '已撤回', icon: 'success' })
           setTimeout(() => {
             loadDetail(detail.value.id)
@@ -368,6 +384,10 @@ onShow(() => {
   line-height: 1.6;
 }
 
+.value.reason.cancel {
+  color: #999;
+}
+
 .value.status.pending {
   color: #fa8c16;
 }
@@ -507,6 +527,57 @@ onShow(() => {
   font-size: 22rpx;
   color: #ff4d4f;
   margin-top: 4rpx;
+}
+
+.flow-step-reason.withdrawn-reason {
+  color: #999;
+}
+
+.flow-step-status.withdrawn-status {
+  color: #999;
+}
+
+.flow-summary {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 16rpx;
+  padding: 20rpx;
+  background: #f5f5f5;
+  border-radius: 12rpx;
+  border: 1rpx solid #d9d9d9;
+}
+
+.flow-summary-icon {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background: #f5f5f5;
+  color: #999;
+  border: 2rpx solid #d9d9d9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  font-weight: 600;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+}
+
+.flow-summary-content {
+  flex: 1;
+}
+
+.flow-summary-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 8rpx;
+}
+
+.flow-summary-reason {
+  font-size: 24rpx;
+  color: #999;
+  line-height: 1.5;
 }
 
 .audit-list {
