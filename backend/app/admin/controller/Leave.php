@@ -3,6 +3,7 @@
 namespace app\admin\controller;
 
 use app\common\controller\AdminApiController;
+use app\common\service\ApprovalRuleService;
 use app\common\service\NotificationService;
 use think\facade\Db;
 use think\facade\Request;
@@ -20,8 +21,46 @@ class Leave extends AdminApiController
             $query->where('l.status', $status);
         }
         $items = $query->select()->toArray();
+
+        $result = [];
+        foreach ($items as $row) {
+            $item = $this->formatLeave($row);
+
+            $flows = Db::table('leave_approval_flows')
+                ->where('leave_request_id', $item['id'])
+                ->order('step_order', 'asc')
+                ->select()
+                ->toArray();
+
+            $flowItems = [];
+            foreach ($flows as $flow) {
+                $approverName = null;
+                if ($flow['approver_user_id']) {
+                    $approver = Db::table('users')
+                        ->where('id', (int)$flow['approver_user_id'])
+                        ->field('name, nickname')
+                        ->find();
+                    if ($approver) {
+                        $approverName = $approver['name'] ?: $approver['nickname'];
+                    }
+                }
+                $flowItems[] = [
+                    'step_order'       => (int)$flow['step_order'],
+                    'step_name'        => $flow['step_name'],
+                    'approver_type'    => $flow['approver_type'],
+                    'approver_user_id' => $flow['approver_user_id'] ? (int)$flow['approver_user_id'] : null,
+                    'approver_name'    => $approverName,
+                    'status'           => $flow['status'],
+                    'approved_at'      => $flow['approved_at'],
+                    'reason'           => $flow['reason'],
+                ];
+            }
+            $item['approval_flows'] = $flowItems;
+            $result[] = $item;
+        }
+
         return $this->success([
-            'items' => array_map([$this, 'formatLeave'], $items),
+            'items' => $result,
         ]);
     }
 
@@ -47,6 +86,29 @@ class Leave extends AdminApiController
             return $this->success([
                 'leave' => $this->formatLeave($row),
             ], '状态已更新');
+        }
+
+        $hasFlow = Db::table('leave_approval_flows')
+            ->where('leave_request_id', $id)
+            ->count();
+
+        if ($hasFlow > 0) {
+            $pendingFlows = Db::table('leave_approval_flows')
+                ->where('leave_request_id', $id)
+                ->where('status', 'pending')
+                ->order('step_order', 'asc')
+                ->select()
+                ->toArray();
+
+            foreach ($pendingFlows as $flow) {
+                Db::table('leave_approval_flows')
+                    ->where('id', $flow['id'])
+                    ->update([
+                        'status'      => $status === 'approved' ? 'approved' : 'rejected',
+                        'approved_at' => date('Y-m-d H:i:s'),
+                        'reason'      => $payload['remark'] ?? $payload['reason'] ?? null,
+                    ]);
+            }
         }
         
         $update = [
@@ -89,6 +151,8 @@ class Leave extends AdminApiController
             'duration_hours' => (float)($row['duration_hours'] ?? 0),
             'reason'         => $row['reason'],
             'status'         => $row['status'],
+            'current_step'   => $row['current_step'] ?? null,
+            'rule_id'        => $row['rule_id'] ?? null,
             'created_at'     => $row['created_at'],
             'approved_at'    => $row['approved_at'],
         ];

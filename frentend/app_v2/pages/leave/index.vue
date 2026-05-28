@@ -37,6 +37,28 @@
       </view>
     </view>
 
+    <view class="card" v-if="pendingApprovals.length">
+      <view class="section-title">待我审批</view>
+      <view class="record" v-for="item in pendingApprovals" :key="item.id" @click="goToDetail(item.id)">
+        <view class="record-row">
+          <text>{{ item.user_name }} - {{ formatType(item.leave_type) }}</text>
+          <text class="status pending">待审批</text>
+        </view>
+        <view class="record-row small">
+          <text>{{ formatRange(item.start_at, item.end_at) }}</text>
+          <text>{{ item.duration_hours }} 小时</text>
+        </view>
+        <view class="record-row small" v-if="item.step_name">
+          <text>当前步骤：{{ item.step_name }}</text>
+        </view>
+        <view class="reason">{{ item.reason || '无备注' }}</view>
+        <view class="action-row">
+          <button class="action-btn approve" @click.stop="handleApproveAction(item.id, 'approved')">通过</button>
+          <button class="action-btn reject" @click.stop="handleApproveAction(item.id, 'rejected')">驳回</button>
+        </view>
+      </view>
+    </view>
+
     <view class="card">
       <view class="section-title">请假申请</view>
       <view class="form-item">
@@ -163,6 +185,7 @@ const form = reactive({
 })
 
 const requests = ref([])
+const pendingApprovals = ref([])
 const submitting = ref(false)
 const loading = ref(false)
 const hasMore = ref(true)
@@ -294,6 +317,56 @@ const submit = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+const fetchPendingApprovals = async () => {
+  try {
+    const res = await api.leavePendingApprovals()
+    pendingApprovals.value = res.items || []
+  } catch (e) {
+    console.error('获取待审批列表失败:', e)
+  }
+}
+
+const handleApproveAction = (id, status) => {
+  if (status === 'rejected') {
+    uni.showModal({
+      title: '驳回请假申请',
+      editable: true,
+      placeholderText: '请输入驳回原因',
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            await api.approveLeave(id, { status: 'rejected', reason: res.content || '' })
+            uni.showToast({ title: '已驳回', icon: 'success' })
+            fetchPendingApprovals()
+          } catch (error) {
+            uni.showToast({ title: error?.message || '操作失败', icon: 'none' })
+          }
+        }
+      }
+    })
+  } else {
+    uni.showModal({
+      title: '确认通过',
+      content: '确定要通过该请假申请吗？',
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            await api.approveLeave(id, { status: 'approved' })
+            uni.showToast({ title: '已通过', icon: 'success' })
+            fetchPendingApprovals()
+          } catch (error) {
+            uni.showToast({ title: error?.message || '操作失败', icon: 'none' })
+          }
+        }
+      }
+    })
+  }
+}
+
+const goToDetail = (id) => {
+  uni.navigateTo({ url: `/pages/leave/detail?id=${id}` })
 }
 
 const fetchRequests = async () => {
@@ -445,6 +518,7 @@ onShow(() => {
   detailItem.value = null
   
   resetAndFetch()
+  fetchPendingApprovals()
 
   const params = getUrlParams()
   if (params.id) {
@@ -591,6 +665,16 @@ textarea {
   line-height: 1.5;
 }
 .action-btn.cancel {
+  background: #fff1f0;
+  color: #ff4d4f;
+  border: 1rpx solid #ffa39e;
+}
+.action-btn.approve {
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1rpx solid #b7eb8f;
+}
+.action-btn.reject {
   background: #fff1f0;
   color: #ff4d4f;
   border: 1rpx solid #ffa39e;

@@ -25,6 +25,7 @@ class NotificationService
     const TEMPLATE_REIMBURSE_APPROVED = 'reimburse_approved';
     const TEMPLATE_LEAVE_REJECTED = 'leave_rejected';
     const TEMPLATE_REIMBURSE_REJECTED = 'reimburse_rejected';
+    const TEMPLATE_LEAVE_APPROVAL_PENDING = 'leave_approval_pending';
 
     const TASK_TEMPLATE_CODES = [
         self::TEMPLATE_TASK_ASSIGNED,
@@ -39,6 +40,7 @@ class NotificationService
         self::TEMPLATE_LEAVE_REJECTED,
         self::TEMPLATE_REIMBURSE_APPROVED,
         self::TEMPLATE_REIMBURSE_REJECTED,
+        self::TEMPLATE_LEAVE_APPROVAL_PENDING,
     ];
 
     public static function getBusinessType(?string $templateCode, ?string $payloadType = null): string
@@ -279,6 +281,54 @@ class NotificationService
                 'order_id' => $task['order_id'] ?? null,
                 'urged_by_id' => $urgedById,
                 'due_at' => $task['due_at'] ?? null,
+            ],
+        ]);
+    }
+
+    public function sendLeaveApprovalPending(int $userId, array $leaveRequest, string $stepName): void
+    {
+        $typeMap = [
+            'annual' => '年假',
+            'sick' => '病假',
+            'personal' => '事假',
+            'other' => '其他',
+        ];
+        $typeLabel = $typeMap[$leaveRequest['leave_type'] ?? ''] ?? '请假';
+
+        $applicantName = '';
+        if (!empty($leaveRequest['user_id'])) {
+            $applicant = Db::table('users')->where('id', (int)$leaveRequest['user_id'])->field('name, nickname')->find();
+            if ($applicant) {
+                $applicantName = $applicant['name'] ?: $applicant['nickname'];
+            }
+        }
+
+        $startDate = $leaveRequest['start_at'] ? date('m月d日 H:i', strtotime($leaveRequest['start_at'])) : '';
+        $endDate = $leaveRequest['end_at'] ? date('m月d日 H:i', strtotime($leaveRequest['end_at'])) : '';
+
+        $title = '请假审批待处理';
+        $content = sprintf('%s提交的%s申请待您审批（%s）。请假时间：%s 至 %s。',
+            $applicantName ?: '有员工',
+            $typeLabel,
+            $stepName,
+            $startDate ?: '未知',
+            $endDate ?: '未知'
+        );
+
+        $this->createNotification($userId, [
+            'channel' => self::CHANNEL_SYSTEM,
+            'template_code' => self::TEMPLATE_LEAVE_APPROVAL_PENDING,
+            'title' => $title,
+            'content' => $content,
+            'payload' => [
+                'type' => 'leave_approval_pending',
+                'leave_id' => $leaveRequest['id'] ?? null,
+                'leave_type' => $leaveRequest['leave_type'] ?? null,
+                'step_name' => $stepName,
+                'applicant_id' => $leaveRequest['user_id'] ?? null,
+                'applicant_name' => $applicantName,
+                'start_at' => $leaveRequest['start_at'] ?? null,
+                'end_at' => $leaveRequest['end_at'] ?? null,
             ],
         ]);
     }

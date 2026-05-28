@@ -162,6 +162,21 @@ export const api = {
   updateLeaveStatus(id, data) {
     return client.post(`/admin/leave/${id}/status`, data)
   },
+  approvalRules(params = {}) {
+    return client.get('/admin/approval-rules', { params })
+  },
+  approvalRuleDetail(id) {
+    return client.get(`/admin/approval-rules/${id}`)
+  },
+  createApprovalRule(data) {
+    return client.post('/admin/approval-rules', data)
+  },
+  updateApprovalRule(id, data) {
+    return client.put(`/admin/approval-rules/${id}`, data)
+  },
+  deleteApprovalRule(id) {
+    return client.delete(`/admin/approval-rules/${id}`)
+  },
   inventory(params = {}) {
     return client.get('/admin/inventory', { params })
   },

@@ -22,6 +22,7 @@
         <el-menu-item index="/reimburse">报销审批</el-menu-item>
         <el-menu-item index="/expense-budgets">预算管理</el-menu-item>
         <el-menu-item index="/leave">请假审批</el-menu-item>
+        <el-menu-item index="/approval-rules">审批规则</el-menu-item>
         <el-menu-item index="/users">注册审核</el-menu-item>
       </el-menu>
     </aside>

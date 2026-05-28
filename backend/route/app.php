@@ -105,6 +105,7 @@ Route::group('api', function () {
     Route::post('factory-visits', '\app\api\controller\FactoryVisit@save');
     Route::put('factory-visits/:id', '\app\api\controller\FactoryVisit@update');
 
+    Route::get('leave/pending-approvals', '\app\api\controller\Leave@pendingApprovals');
     Route::post('leave/:id/approve', '\app\api\controller\Leave@approve');
     Route::post('leave/:id/cancel', '\app\api\controller\Leave@cancel');
     Route::get('leave/:id', '\app\api\controller\Leave@read');
@@ -142,6 +143,12 @@ Route::group('api', function () {
         Route::delete('expense-budgets/:id', '\app\admin\controller\ExpenseBudget@delete');
         Route::get('leave', '\app\admin\controller\Leave@index');
         Route::post('leave/:id/status', '\app\admin\controller\Leave@updateStatus');
+
+        Route::get('approval-rules', '\app\admin\controller\ApprovalRule@index');
+        Route::get('approval-rules/:id', '\app\admin\controller\ApprovalRule@read');
+        Route::post('approval-rules', '\app\admin\controller\ApprovalRule@save');
+        Route::put('approval-rules/:id', '\app\admin\controller\ApprovalRule@update');
+        Route::delete('approval-rules/:id', '\app\admin\controller\ApprovalRule@delete');
 
         Route::get('users', '\app\admin\controller\User@index');
         Route::post('users/:id/approve', '\app\admin\controller\User@approve');

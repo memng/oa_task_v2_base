@@ -26,6 +26,28 @@
           <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="审批流程" width="280">
+        <template #default="{ row }">
+          <div v-if="row.approval_flows && row.approval_flows.length">
+              <div v-for="flow in row.approval_flows" :key="flow.step_order" class="flow-step">
+                <span class="flow-step-name">{{ flow.step_name }}</span>
+                <span class="flow-step-approver">
+                  <template v-if="flow.approver_name">
+                    {{ flow.approver_type_label || '审批人' }}：{{ flow.approver_name }}
+                  </template>
+                  <template v-else-if="flow.skip_reason_label">
+                    {{ flow.skip_reason_label }}
+                  </template>
+                  <template v-else>
+                    {{ flow.approver_type_label || '审批人' }}：待分配
+                  </template>
+                </span>
+                <el-tag size="small" :type="flowStatusType(flow.status)">{{ flow.status_label || flowStatusText(flow.status) }}</el-tag>
+              </div>
+            </div>
+          <span v-else>—</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="220">
         <template #default="{ row }">
           <el-button v-if="row.status === 'pending'" type="success" size="small" @click="updateStatus(row.id, 'approved')">通过</el-button>
@@ -68,6 +90,20 @@ const statusType = (value) => {
   return 'warning'
 }
 
+const flowStatusText = (value) => {
+  if (value === 'approved') return '已通过'
+  if (value === 'rejected') return '已拒绝'
+  if (value === 'auto_skipped') return '自动通过'
+  return '待审批'
+}
+
+const flowStatusType = (value) => {
+  if (value === 'approved') return 'success'
+  if (value === 'rejected') return 'danger'
+  if (value === 'auto_skipped') return 'success'
+  return 'warning'
+}
+
 const typeLabel = (type) => {
   const map = { annual: '年假', sick: '病假', personal: '事假', other: '其他' }
   return map[type] || '其他'
@@ -84,5 +120,23 @@ onMounted(fetchList)
 }
 .toolbar .el-select {
   width: 200px;
+}
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.flow-step:last-child {
+  margin-bottom: 0;
+}
+.flow-step-name {
+  color: #666;
+  white-space: nowrap;
+}
+.flow-step-approver {
+  color: #333;
+  font-weight: 500;
 }
 </style>

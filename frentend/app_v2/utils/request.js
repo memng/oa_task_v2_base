@@ -181,6 +181,12 @@ export const api = {
   cancelLeave(id, payload = {}) {
     return request({ url: `/leave/${id}/cancel`, method: 'POST', data: payload })
   },
+  approveLeave(id, payload = {}) {
+    return request({ url: `/leave/${id}/approve`, method: 'POST', data: payload })
+  },
+  leavePendingApprovals() {
+    return request({ url: '/leave/pending-approvals' })
+  },
   lookups() {
     return request({ url: '/lookups' })
   },

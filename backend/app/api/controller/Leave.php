@@ -3,6 +3,7 @@
 namespace app\api\controller;
 
 use app\common\controller\ApiController;
+use app\common\service\ApprovalRuleService;
 use app\common\service\NotificationService;
 use think\facade\Db;
 use think\facade\Request;
@@ -86,18 +87,92 @@ class Leave extends ApiController
                 'message' => $this->buildConflictMessage($conflictingRecords)
             ]);
         }
+
+        $user = Db::table('users')->where('id', $userId)->find();
+        $approvalService = new ApprovalRuleService();
+        $rule = $approvalService->matchRule($userId, $data['leave_type']);
+
+        if (!$rule) {
+            $rule = $approvalService->getDefaultRule();
+        }
+
+        if (!$rule) {
+            $this->errorResponse('未匹配到可用的审批规则，请联系管理员配置请假审批规则');
+        }
+
+        $preValidation = $approvalService->validateRuleSteps(
+            $rule['steps'],
+            $rule['dept_id'] ?? null,
+            $userId,
+            $user['dept_id'] ?? null,
+            $rule['level_min'] ?? null,
+            $rule['level_max'] ?? null,
+            $rule['leave_type'] ?? null
+        );
+        if (!empty($preValidation)) {
+            $this->errorResponse('提交失败：' . implode('；', $preValidation), 422, [
+                'validation_errors' => $preValidation
+            ]);
+        }
+
+        $ruleId = (int)$rule['id'];
         
-        $id = Db::table('leave_requests')->insertGetId([
-            'user_id'       => $userId,
-            'leave_type'    => $data['leave_type'],
-            'start_at'      => $startAt,
-            'end_at'        => $endAt,
-            'duration_hours'=> $data['duration_hours'] ?? 0,
-            'reason'        => $data['reason'] ?? null,
-            'status'        => 'pending',
-            'created_at'    => date('Y-m-d H:i:s'),
-        ]);
-        $this->logAudit($id, 'create', null, 'pending', $userId, $data['reason'] ?? null);
+        Db::startTrans();
+        try {
+            $id = Db::table('leave_requests')->insertGetId([
+                'user_id'       => $userId,
+                'leave_type'    => $data['leave_type'],
+                'start_at'      => $startAt,
+                'end_at'        => $endAt,
+                'duration_hours'=> $data['duration_hours'] ?? 0,
+                'reason'        => $data['reason'] ?? null,
+                'status'        => 'pending',
+                'rule_id'       => $ruleId,
+                'current_step'  => null,
+                'created_at'    => date('Y-m-d H:i:s'),
+            ]);
+            $this->logAudit($id, 'create', null, 'pending', $userId, $data['reason'] ?? null);
+
+            $flows = $approvalService->createApprovalFlows($id, $rule, $userId, $user['dept_id'] ?? null);
+
+            $allAutoSkipped = true;
+            foreach ($flows as $flow) {
+                if ($flow['status'] !== 'auto_skipped') {
+                    $allAutoSkipped = false;
+                    break;
+                }
+            }
+
+            if ($allAutoSkipped) {
+                Db::table('leave_requests')->where('id', $id)->update([
+                    'status'       => 'approved',
+                    'approver_id'  => null,
+                    'approved_at'  => date('Y-m-d H:i:s'),
+                    'current_step' => null,
+                ]);
+                $this->logAudit($id, 'approve', 'pending', 'approved', $userId, '所有审批步骤自动跳过，自动通过');
+            } else {
+                $nextStep = $approvalService->advanceToNextStep($id);
+                if ($nextStep && $nextStep['approver_user_id']) {
+                    $notificationService = new NotificationService();
+                    $leaveRequest = Db::table('leave_requests')->where('id', $id)->find();
+                    $notificationService->sendLeaveApprovalPending(
+                        $nextStep['approver_user_id'],
+                        $leaveRequest,
+                        $nextStep['step_name']
+                    );
+                }
+            }
+
+            Db::commit();
+        } catch (\RuntimeException $e) {
+            Db::rollback();
+            $this->errorResponse('提交失败：' . $e->getMessage(), 422);
+        } catch (\Exception $e) {
+            Db::rollback();
+            $this->errorResponse('提交失败：' . $e->getMessage());
+        }
+
         return $this->success(['id' => $id], '请假申请已提交', 201);
     }
     
@@ -160,31 +235,106 @@ class Leave extends ApiController
                 $this->errorResponse('仅待审批状态的申请可审批');
             }
 
-            $updated = Db::table('leave_requests')
-                ->where('id', $id)
-                ->where('status', 'pending')
-                ->update([
-                    'status'      => $status,
-                    'approver_id' => $userId,
-                    'approved_at' => date('Y-m-d H:i:s'),
-                ]);
+            $approvalService = new ApprovalRuleService();
+            $hasFlow = Db::table('leave_approval_flows')
+                ->where('leave_request_id', $id)
+                ->count();
 
-            if ($updated !== 1) {
-                Db::rollback();
-                $this->errorResponse('审批失败，请重试');
-            }
+            if ($hasFlow > 0) {
+                if (!$approvalService->canApprove((int)$id, $userId)) {
+                    Db::rollback();
+                    $this->errorResponse('您无权审批该申请或当前不是您的审批步骤');
+                }
 
-            $action = $status === 'approved' ? 'approve' : 'reject';
-            $this->logAudit($id, $action, 'pending', $status, $userId, $data['reason'] ?? null);
+                $flow = Db::table('leave_approval_flows')
+                    ->where('leave_request_id', $id)
+                    ->where('approver_user_id', $userId)
+                    ->where('status', 'pending')
+                    ->find();
 
-            $notificationService = new NotificationService();
-            $applicantId = (int)$leaveRequest['user_id'];
-            $reason = $data['reason'] ?? null;
-            
-            if ($status === 'approved') {
-                $notificationService->sendLeaveApproved($applicantId, $leaveRequest);
+                if (!$flow) {
+                    Db::rollback();
+                    $this->errorResponse('未找到待审批步骤');
+                }
+
+                $flowStatus = $status === 'approved' ? 'approved' : 'rejected';
+                Db::table('leave_approval_flows')
+                    ->where('id', $flow['id'])
+                    ->update([
+                        'status'      => $flowStatus,
+                        'approved_at' => date('Y-m-d H:i:s'),
+                        'reason'      => $data['reason'] ?? null,
+                    ]);
+
+                $action = $status === 'approved' ? 'approve' : 'reject';
+                $this->logAudit($id, $action, 'pending', $status, $userId, $data['reason'] ?? null);
+
+                if ($status === 'rejected') {
+                    Db::table('leave_requests')
+                        ->where('id', $id)
+                        ->update([
+                            'status'      => 'rejected',
+                            'approver_id' => $userId,
+                            'approved_at' => date('Y-m-d H:i:s'),
+                        ]);
+
+                    $notificationService = new NotificationService();
+                    $applicantId = (int)$leaveRequest['user_id'];
+                    $reason = $data['reason'] ?? null;
+                    $notificationService->sendLeaveRejected($applicantId, $leaveRequest, $reason);
+                } else {
+                    if ($approvalService->isFullyApproved((int)$id)) {
+                        Db::table('leave_requests')
+                            ->where('id', $id)
+                            ->update([
+                                'status'       => 'approved',
+                                'approver_id'  => $userId,
+                                'approved_at'  => date('Y-m-d H:i:s'),
+                                'current_step' => null,
+                            ]);
+
+                        $notificationService = new NotificationService();
+                        $applicantId = (int)$leaveRequest['user_id'];
+                        $notificationService->sendLeaveApproved($applicantId, $leaveRequest);
+                    } else {
+                        $nextStep = $approvalService->advanceToNextStep((int)$id);
+                        if ($nextStep && $nextStep['approver_user_id']) {
+                            $notificationService = new NotificationService();
+                            $notificationService->sendLeaveApprovalPending(
+                                $nextStep['approver_user_id'],
+                                $leaveRequest,
+                                $nextStep['step_name']
+                            );
+                        }
+                    }
+                }
             } else {
-                $notificationService->sendLeaveRejected($applicantId, $leaveRequest, $reason);
+                $updated = Db::table('leave_requests')
+                    ->where('id', $id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status'      => $status,
+                        'approver_id' => $userId,
+                        'approved_at' => date('Y-m-d H:i:s'),
+                    ]);
+
+                if ($updated !== 1) {
+                    Db::rollback();
+                    $this->errorResponse('审批失败，请重试');
+                }
+
+                $action = $status === 'approved' ? 'approve' : 'reject';
+                $this->logAudit($id, $action, 'pending', $status, $userId, $data['reason'] ?? null);
+
+                $notificationService = new NotificationService();
+                $applicantId = (int)$leaveRequest['user_id'];
+                $reason = $data['reason'] ?? null;
+                
+                if ($status === 'approved') {
+                    $notificationService->sendLeaveApproved($applicantId, $leaveRequest);
+                } else {
+                    $notificationService->sendLeaveRejected($applicantId, $leaveRequest, $reason);
+                }
             }
 
             Db::commit();
@@ -232,6 +382,11 @@ class Leave extends ApiController
                 $this->errorResponse('撤回失败，请重试');
             }
 
+            Db::table('leave_approval_flows')
+                ->where('leave_request_id', $id)
+                ->where('status', 'pending')
+                ->update(['status' => 'auto_skipped', 'skip_reason' => 'withdrawn']);
+
             $this->logAudit($id, 'cancel', 'pending', 'cancelled', $userId, $data['reason'] ?? null);
 
             Db::commit();
@@ -254,7 +409,13 @@ class Leave extends ApiController
             $this->errorResponse('请假申请不存在', 404);
         }
 
-        if ($leaveRequest['user_id'] != $userId) {
+        $isOwner = $leaveRequest['user_id'] == $userId;
+        $isApprover = Db::table('leave_approval_flows')
+            ->where('leave_request_id', (int)$id)
+            ->where('approver_user_id', $userId)
+            ->count() > 0;
+
+        if (!$isOwner && !$isApprover) {
             $this->errorResponse('无权限查看该请假申请', 403);
         }
 
@@ -289,6 +450,14 @@ class Leave extends ApiController
             }
         }
 
+        $approvalService = new ApprovalRuleService();
+        $approvalFlows = $approvalService->getApprovalFlows((int)$id);
+
+        $canApprove = false;
+        if ($leaveRequest['status'] === 'pending') {
+            $canApprove = $approvalService->canApprove((int)$id, $userId);
+        }
+
         return $this->success([
             'id' => (int)$leaveRequest['id'],
             'user_id' => (int)$leaveRequest['user_id'],
@@ -303,9 +472,21 @@ class Leave extends ApiController
             'approver_id' => $leaveRequest['approver_id'] ? (int)$leaveRequest['approver_id'] : null,
             'approver_name' => $approverName,
             'approved_at' => $leaveRequest['approved_at'],
+            'current_step' => $leaveRequest['current_step'] ? (int)$leaveRequest['current_step'] : null,
+            'rule_id' => $leaveRequest['rule_id'] ? (int)$leaveRequest['rule_id'] : null,
+            'can_approve' => $canApprove,
+            'approval_flows' => $approvalFlows,
             'created_at' => $leaveRequest['created_at'],
             'audits' => $audits
         ]);
+    }
+
+    public function pendingApprovals()
+    {
+        $userId = $this->user()['id'];
+        $approvalService = new ApprovalRuleService();
+        $result = $approvalService->getPendingApprovals($userId);
+        return $this->success(['items' => $result]);
     }
 
     private function logAudit($leaveRequestId, $action, $fromStatus, $toStatus, $operatorId, $reason = null)

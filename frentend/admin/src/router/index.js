@@ -16,6 +16,7 @@ import Suppliers from '../views/Suppliers.vue'
 import Reimburse from '../views/Reimburse.vue'
 import ExpenseBudgets from '../views/ExpenseBudgets.vue'
 import Leave from '../views/Leave.vue'
+import ApprovalRules from '../views/ApprovalRules.vue'
 import Login from '../views/Login.vue'
 import { ADMIN_TOKEN_KEY } from '../api'
 import Inventory from '../views/Inventory.vue'
@@ -49,6 +50,7 @@ const router = createRouter({
         { path: 'reimburse', component: Reimburse },
         { path: 'expense-budgets', component: ExpenseBudgets },
         { path: 'leave', component: Leave },
+        { path: 'approval-rules', component: ApprovalRules },
         { path: 'users', component: UserAudit }
       ]
     }
