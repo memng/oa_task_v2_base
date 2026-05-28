@@ -51,12 +51,125 @@
       </view>
     </view>
     <view class="card">
-      <view class="section-title">票据上传</view>
-      <view class="upload-list">
+      <view class="section-header">
+        <view class="section-title">票据上传</view>
+        <view class="section-actions" v-if="uploadedFiles.length > 0">
+          <text 
+            class="action-btn" 
+            @click="toggleSelectMode"
+            :class="{ active: selectMode }"
+          >
+            {{ selectMode ? '取消' : '管理' }}
+          </text>
+        </view>
+      </view>
+      
+      <view class="movable-area" v-if="selectMode">
+        <movable-area class="drag-container" :scale-area="false">
+          <view class="upload-list">
+            <view 
+              v-for="(file, index) in displayFiles" 
+              :key="file.id" 
+              class="upload-item"
+              :class="{ 
+                selected: selectedFileIds.includes(file.id), 
+                'is-placeholder': isDragging && draggingFileId === file.id,
+                'is-rearranging': isRearranging
+              }"
+            >
+              <view class="item-content">
+                <view 
+                  class="select-indicator" 
+                  @click.stop="toggleSelectById(file.id)"
+                >
+                  <uni-icons 
+                    :type="selectedFileIds.includes(file.id) ? 'checkmark-filled' : 'circle'" 
+                    size="32" 
+                    :color="selectedFileIds.includes(file.id) ? '#1677ff' : '#ccc'" 
+                  />
+                </view>
+                
+                <view 
+                  class="preview-wrapper"
+                  @click.stop="previewSingleById(file.id)"
+                >
+                  <image 
+                    v-if="isImageFile(file.name)" 
+                    class="file-preview" 
+                    :src="file.url" 
+                    mode="aspectFill" 
+                  />
+                  <view v-else class="file-icon">
+                    <uni-icons type="document" size="40" color="#666" />
+                  </view>
+                </view>
+
+                <view 
+                  class="drag-handle-zone"
+                  @longpress.stop="startDrag(file, index, $event)"
+                  @touchstart.stop="onDragTouchStart($event)"
+                  @touchmove.stop.prevent="onDragTouchMove($event)"
+                  @touchend.stop="onDragTouchEnd"
+                  @touchcancel.stop="onDragTouchEnd"
+                >
+                  <view class="drag-handle-icon">
+                    <uni-icons type="list" size="24" color="#999" />
+                  </view>
+                </view>
+                
+                <text class="file-name-text">{{ file.name }}</text>
+                <view class="sort-badge">
+                  <text class="sort-text">{{ index + 1 }}</text>
+                </view>
+              </view>
+            </view>
+
+            <movable-view
+              v-if="isDragging"
+              class="movable-item"
+              :x="dragX"
+              :y="dragY"
+              direction="all"
+              :inertia="false"
+              :out-of-bounds="false"
+              :damping="100"
+              :friction="10"
+            >
+              <view class="upload-item dragging">
+                <view class="preview-wrapper">
+                  <image 
+                    v-if="isImageFile(draggingFile?.name)" 
+                    class="file-preview" 
+                    :src="draggingFile?.url" 
+                    mode="aspectFill" 
+                  />
+                  <view v-else class="file-icon">
+                    <uni-icons type="document" size="40" color="#666" />
+                  </view>
+                </view>
+                <text class="file-name-text">{{ draggingFile?.name }}</text>
+              </view>
+            </movable-view>
+
+            <view 
+              class="upload-item upload-btn" 
+              @click="upload" 
+              :class="{ disabled: uploading }"
+              v-if="uploadedFiles.length < MAX_UPLOAD_COUNT"
+            >
+              <uni-icons type="plus" size="48" color="#ccc" />
+              <text class="upload-tip">添加票据</text>
+            </view>
+          </view>
+        </movable-area>
+      </view>
+
+      <view class="upload-list" v-else>
         <view 
           v-for="(file, index) in uploadedFiles" 
-          :key="index" 
+          :key="file.id" 
           class="upload-item"
+          @click="previewSingleById(file.id)"
         >
           <view class="preview-wrapper">
             <image 
@@ -68,7 +181,7 @@
             <view v-else class="file-icon">
               <uni-icons type="document" size="40" color="#666" />
             </view>
-            <view class="delete-btn" @click.stop="removeFile(index)">
+            <view class="delete-btn" @click.stop="removeFileById(file.id)">
               <uni-icons type="close" size="24" color="#fff" />
             </view>
           </view>
@@ -84,8 +197,37 @@
           <text class="upload-tip">添加票据</text>
         </view>
       </view>
+
+      <view class="action-bar" v-if="selectMode">
+        <view class="action-bar-left">
+          <text class="select-all-btn" @click="toggleSelectAll">
+            {{ isAllSelected ? '取消全选' : '全选' }}
+          </text>
+          <text class="selected-count">已选 {{ selectedFileIds.length }} 项</text>
+        </view>
+        <view class="action-bar-right">
+          <button 
+            class="action-bar-btn preview" 
+            :disabled="selectedFileIds.length === 0"
+            @click="batchPreview"
+          >
+            预览
+          </button>
+          <button 
+            class="action-bar-btn delete" 
+            :disabled="selectedFileIds.length === 0"
+            @click="batchDelete"
+          >
+            删除
+          </button>
+        </view>
+      </view>
+
       <view v-if="uploadedFiles.length === 0" class="empty-hint">
         <text class="hint-text">最多可上传 {{ MAX_UPLOAD_COUNT }} 个票据文件</text>
+      </view>
+      <view v-if="uploadedFiles.length > 0 && !selectMode" class="hint-text-bottom">
+        <text class="hint-text">点击图片可预览，长按或点击「管理」可批量操作</text>
       </view>
     </view>
     <button class="primary" :loading="submitting" @click="submit">提交报销</button>
@@ -149,26 +291,28 @@
       <view class="card-footer" v-if="item.receipts && item.receipts.length > 0">
         <view class="attachments-header">
           <text class="attachments-title">票据附件 ({{ item.receipts.length }})</text>
+          <text class="attachments-hint" v-if="item.receipts.length > 1">点击图片可浏览</text>
         </view>
         <view class="attachments-list">
           <view 
-            v-for="(receipt, idx) in item.receipts" 
-            :key="idx"
+            v-for="receipt in item.receipts" 
+            :key="receipt.id"
             class="attachment-item" 
-            @click.stop="viewAttachment(receipt)"
+            @click.stop="viewListAttachment(item.receipts, receipt)"
           >
-            <view class="attachment-icon">
+            <view class="attachment-icon" :class="getAttachmentDisplay(receipt.file_name).typeClass">
               <image 
-                v-if="isImageFile(receipt.file_name)" 
+                v-if="getAttachmentDisplay(receipt.file_name).isImage" 
                 class="attachment-preview" 
                 :src="resolveAssetUrl(receipt.url)" 
                 mode="aspectFill" 
               />
+              <text v-else-if="getAttachmentDisplay(receipt.file_name).icon" class="pdf-icon">{{ getAttachmentDisplay(receipt.file_name).icon }}</text>
               <uni-icons v-else type="document" size="36" color="#1677ff" />
             </view>
             <view class="attachment-info">
               <text class="attachment-name">{{ receipt.file_name || '票据附件' }}</text>
-              <text class="attachment-tip">点击查看</text>
+              <text class="attachment-tip">{{ getAttachmentDisplay(receipt.file_name).tipLabel }}</text>
             </view>
           </view>
         </view>
@@ -208,14 +352,39 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api, uploadReceipt, resolveAssetUrl } from '../../utils/request'
+import { 
+  getFileExtension, 
+  isImageFile, 
+  isPdfFile,
+  getFileIcon,
+  getFileTypeKey,
+  previewAttachment,
+  previewBatchAttachments 
+} from '../../utils/attachment-preview'
 
 const MAX_UPLOAD_COUNT = 9
 const MAX_FILE_SIZE = 1024 * 1024
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'pdf']
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'bmp']
+
+const generateId = () => {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2, 9)
+}
+
+const isAllSelected = computed(() => {
+  return uploadedFiles.value.length > 0 && selectedFileIds.value.length === uploadedFiles.value.length
+})
+
+const getFileById = (id) => {
+  return uploadedFiles.value.find(f => f.id === id)
+}
+
+const getIndexById = (id) => {
+  return uploadedFiles.value.findIndex(f => f.id === id)
+}
 
 const types = [
   { label: '差旅费用', value: 'travel' },
@@ -231,6 +400,35 @@ const form = reactive({
 const uploadedFiles = ref([])
 const uploading = ref(false)
 const submitting = ref(false)
+const selectMode = ref(false)
+const selectedFileIds = ref([])
+
+const isDragging = ref(false)
+const draggingFile = ref(null)
+const draggingFileId = ref(null)
+const dragStartIndex = ref(-1)
+const dragOverIndex = ref(-1)
+const dragX = ref(0)
+const dragY = ref(0)
+const dragStartX = ref(0)
+const dragStartY = ref(0)
+const dragContainerRect = reactive({ x: 0, y: 0, width: 0, height: 0 })
+const dragItemRect = reactive({ width: 0, height: 0 })
+const dragColCount = ref(3)
+const isRearranging = ref(false)
+
+const displayFiles = computed(() => {
+  const files = [...uploadedFiles.value]
+  if (!isDragging.value || dragStartIndex.value < 0 || dragOverIndex.value < 0) {
+    return files
+  }
+  if (dragStartIndex.value === dragOverIndex.value) {
+    return files
+  }
+  const [removed] = files.splice(dragStartIndex.value, 1)
+  files.splice(dragOverIndex.value, 0, removed)
+  return files
+})
 
 const list = ref([])
 const loadingList = ref(false)
@@ -248,17 +446,6 @@ const filterTypeOptions = [
 const currentFilterType = ref(filterTypeOptions[0])
 const filterStartDate = ref('')
 const filterEndDate = ref('')
-
-const getFileExtension = (filePath) => {
-  const ext = filePath.split('.').pop().toLowerCase()
-  return ext
-}
-
-const isImageFile = (fileName) => {
-  if (!fileName) return false
-  const ext = getFileExtension(fileName)
-  return IMAGE_EXTENSIONS.includes(ext)
-}
 
 const validateFile = (filePath, size = null) => {
   const extension = getFileExtension(filePath)
@@ -344,6 +531,226 @@ const removeFile = (index) => {
   form.receipt_media_ids.splice(index, 1)
 }
 
+const removeFileById = (id) => {
+  const index = getIndexById(id)
+  if (index > -1) {
+    removeFile(index)
+  }
+}
+
+const toggleSelectMode = () => {
+  selectMode.value = !selectMode.value
+  selectedFileIds.value = []
+  resetDragState()
+  if (selectMode.value) {
+    setTimeout(updateListOffset, 50)
+  }
+}
+
+const toggleSelectById = (id) => {
+  const idx = selectedFileIds.value.indexOf(id)
+  if (idx > -1) {
+    selectedFileIds.value.splice(idx, 1)
+  } else {
+    selectedFileIds.value.push(id)
+  }
+}
+
+const toggleSelectAll = () => {
+  if (isAllSelected.value) {
+    selectedFileIds.value = []
+  } else {
+    selectedFileIds.value = uploadedFiles.value.map(f => f.id)
+  }
+}
+
+const previewSingleById = (id) => {
+  const file = getFileById(id)
+  if (file) {
+    previewAttachment({ ...file, file_name: file.name }, uploadedFiles.value.map(f => ({ ...f, file_name: f.name })), (url) => url).catch(() => {})
+  }
+}
+
+const batchPreview = () => {
+  const selectedFiles = selectedFileIds.value.map(id => {
+    const file = getFileById(id)
+    return file ? { ...file, file_name: file.name } : null
+  }).filter(Boolean)
+  
+  previewBatchAttachments(selectedFiles, (url) => url)
+}
+
+const batchDelete = () => {
+  if (selectedFileIds.value.length === 0) return
+
+  uni.showModal({
+    title: '确认删除',
+    content: `确定要删除选中的 ${selectedFileIds.value.length} 个附件吗？`,
+    success: (res) => {
+      if (res.confirm) {
+        selectedFileIds.value.forEach(id => {
+          const index = getIndexById(id)
+          if (index > -1) {
+            uploadedFiles.value.splice(index, 1)
+            form.receipt_media_ids.splice(index, 1)
+          }
+        })
+        selectedFileIds.value = []
+        
+        if (uploadedFiles.value.length === 0) {
+          selectMode.value = false
+        }
+        uni.showToast({ title: '删除成功', icon: 'success' })
+      }
+    }
+  })
+}
+
+const resetDragState = () => {
+  isDragging.value = false
+  draggingFile.value = null
+  draggingFileId.value = null
+  dragStartIndex.value = -1
+  dragOverIndex.value = -1
+  dragX.value = 0
+  dragY.value = 0
+  dragStartX.value = 0
+  dragStartY.value = 0
+  isRearranging.value = false
+}
+
+const measureDragArea = () => {
+  const query = uni.createSelectorQuery()
+  query.select('.drag-container .upload-list').boundingClientRect((containerRect) => {
+    if (containerRect) {
+      dragContainerRect.x = containerRect.left
+      dragContainerRect.y = containerRect.top
+      dragContainerRect.width = containerRect.width
+      dragContainerRect.height = containerRect.height
+    }
+  }).exec()
+  
+  query.select('.upload-item:not(.upload-btn) .preview-wrapper').boundingClientRect((itemRect) => {
+    if (itemRect) {
+      dragItemRect.width = itemRect.width
+      dragItemRect.height = itemRect.height + 56
+    }
+  }).exec()
+}
+
+const calculateDropIndex = (pageX, pageY) => {
+  if (dragContainerRect.width === 0 || dragItemRect.width === 0) {
+    const fallbackItemWidth = 176
+    const fallbackItemHeight = 216
+    const relativeX = pageX - dragContainerRect.x
+    const relativeY = pageY - dragContainerRect.y
+    const col = Math.floor(relativeX / fallbackItemWidth)
+    const row = Math.floor(relativeY / fallbackItemHeight)
+    const idx = col + row * 3
+    return Math.max(0, Math.min(idx, uploadedFiles.value.length - 1))
+  }
+  
+  const itemWidth = dragItemRect.width + 16
+  const itemHeight = dragItemRect.height + 16
+  const cols = Math.max(1, Math.floor(dragContainerRect.width / itemWidth))
+  
+  const relativeX = pageX - dragContainerRect.x
+  const relativeY = pageY - dragContainerRect.y
+  const col = Math.floor(relativeX / itemWidth)
+  const row = Math.floor(relativeY / itemHeight)
+  const idx = col + row * cols
+  
+  return Math.max(0, Math.min(idx, uploadedFiles.value.length - 1))
+}
+
+const getDragItemPosition = (index) => {
+  if (dragItemRect.width === 0) {
+    return {
+      x: index % 3 * 176,
+      y: Math.floor(index / 3) * 216
+    }
+  }
+  const itemWidth = dragItemRect.width + 16
+  const itemHeight = dragItemRect.height + 16
+  const cols = Math.max(1, Math.floor(dragContainerRect.width / itemWidth))
+  
+  return {
+    x: (index % cols) * itemWidth,
+    y: Math.floor(index / cols) * itemHeight
+  }
+}
+
+const startDrag = (file, index, event) => {
+  if (!event.touches || event.touches.length === 0) return
+  
+  measureDragArea()
+  
+  isDragging.value = true
+  draggingFile.value = file
+  draggingFileId.value = file.id
+  dragStartIndex.value = index
+  
+  const pos = getDragItemPosition(index)
+  dragX.value = pos.x
+  dragY.value = pos.y
+  
+  dragStartX.value = event.touches[0].pageX - pos.x
+  dragStartY.value = event.touches[0].pageY - pos.y
+  
+  uni.vibrateShort()
+}
+
+const onDragTouchStart = (event) => {
+  if (!isDragging.value) return
+  dragStartX.value = event.touches[0].pageX - dragX.value
+  dragStartY.value = event.touches[0].pageY - dragY.value
+}
+
+const onDragTouchMove = (event) => {
+  if (!isDragging.value || !event.touches || event.touches.length === 0) return
+  
+  const touch = event.touches[0]
+  const newX = touch.pageX - dragStartX.value
+  const newY = touch.pageY - dragStartY.value
+  
+  dragX.value = newX
+  dragY.value = newY
+  
+  const targetIndex = calculateDropIndex(touch.pageX, touch.pageY)
+  if (targetIndex > -1 && targetIndex !== dragOverIndex.value && targetIndex !== dragStartIndex.value) {
+    isRearranging.value = true
+    dragOverIndex.value = targetIndex
+    uni.vibrateShort({ type: 'light' })
+    setTimeout(() => {
+      isRearranging.value = false
+    }, 150)
+  }
+}
+
+const onDragTouchEnd = () => {
+  if (!isDragging.value) return
+  
+  if (dragOverIndex.value > -1 && dragOverIndex.value !== dragStartIndex.value) {
+    const fromIndex = dragStartIndex.value
+    const toIndex = dragOverIndex.value
+    
+    if (fromIndex > -1 && toIndex > -1 && fromIndex !== toIndex) {
+      const dragItem = uploadedFiles.value[fromIndex]
+      const dragMediaId = form.receipt_media_ids[fromIndex]
+      
+      uploadedFiles.value.splice(fromIndex, 1)
+      form.receipt_media_ids.splice(fromIndex, 1)
+      
+      uploadedFiles.value.splice(toIndex, 0, dragItem)
+      form.receipt_media_ids.splice(toIndex, 0, dragMediaId)
+      
+      uni.vibrateShort()
+    }
+  }
+  
+  resetDragState()
+}
+
 const upload = async () => {
   if (uploading.value) return
   if (uploadedFiles.value.length >= MAX_UPLOAD_COUNT) {
@@ -376,6 +783,7 @@ const upload = async () => {
       const result = await uploadReceipt(file.path)
       if (result && result.media_id) {
         uploadedFiles.value.push({
+          id: generateId(),
           media_id: result.media_id,
           name: file.name || result.file_name || '票据附件',
           url: result.url || ''
@@ -529,59 +937,29 @@ const searchList = () => {
   fetchList(true)
 }
 
+const viewListAttachment = (receipts, currentReceipt) => {
+  if (!currentReceipt || !currentReceipt.url) {
+    uni.showToast({ title: '附件不存在', icon: 'none' })
+    return
+  }
+  previewAttachment(currentReceipt, receipts, resolveAssetUrl).catch(() => {})
+}
+
 const viewAttachment = (receipt) => {
   if (!receipt || !receipt.url) {
     uni.showToast({ title: '附件不存在', icon: 'none' })
     return
   }
+  previewAttachment(receipt, [receipt], resolveAssetUrl).catch(() => {})
+}
 
-  const fullUrl = resolveAssetUrl(receipt.url)
-  const fileName = receipt.file_name || 'attachment'
-  const ext = fileName.split('.').pop().toLowerCase()
-
-  if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) {
-    uni.previewImage({
-      urls: [fullUrl],
-      current: 0
-    })
-  } else if (ext === 'pdf') {
-    uni.showLoading({ title: '加载中...' })
-    uni.downloadFile({
-      url: fullUrl,
-      success: (res) => {
-        uni.hideLoading()
-        if (res.statusCode === 200) {
-          uni.openDocument({
-            filePath: res.tempFilePath,
-            fileType: 'pdf',
-            success: () => console.log('打开文档成功'),
-            fail: (err) => {
-              console.error('打开文档失败:', err)
-              uni.showToast({ title: '无法打开此文件', icon: 'none' })
-            }
-          })
-        }
-      },
-      fail: () => {
-        uni.hideLoading()
-        uni.showToast({ title: '下载失败', icon: 'none' })
-      }
-    })
-  } else {
-    uni.showModal({
-      title: '提示',
-      content: '当前不支持预览此类型的文件，是否复制链接？',
-      success: (res) => {
-        if (res.confirm) {
-          uni.setClipboardData({
-            data: fullUrl,
-            success: () => {
-              uni.showToast({ title: '链接已复制', icon: 'success' })
-            }
-          })
-        }
-      }
-    })
+const getAttachmentDisplay = (fileName) => {
+  return {
+    isImage: isImageFile(fileName),
+    isPdf: isPdfFile(fileName),
+    typeClass: `type-${getFileTypeKey(fileName)}`,
+    icon: getFileIcon(fileName),
+    tipLabel: isImageFile(fileName) ? '点击查看' : `${getFileExtension(fileName).toUpperCase()} · 点击查看`
   }
 }
 
@@ -653,11 +1031,80 @@ onShow(() => {
   padding: 24rpx;
   margin-bottom: 24rpx;
 }
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
 .section-title {
   font-size: 30rpx;
   font-weight: 600;
-  margin-bottom: 16rpx;
 }
+
+.section-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.action-btn {
+  font-size: 26rpx;
+  color: #1677ff;
+  padding: 8rpx 16rpx;
+  border-radius: 8rpx;
+  
+  &.active {
+    background: #e6f4ff;
+  }
+}
+
+.movable-area {
+  width: 100%;
+  position: relative;
+}
+
+.movable-item {
+  width: 160rpx;
+  height: auto;
+  z-index: 999;
+}
+
+.item-content {
+  width: 100%;
+  height: 100%;
+}
+
+.quick-view {
+  position: absolute;
+  top: 8rpx;
+  right: 8rpx;
+  width: 48rpx;
+  height: 48rpx;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+  z-index: 15;
+}
+
+.upload-item.drag-placeholder {
+  opacity: 0.3;
+  transform: scale(0.95);
+}
+
+.upload-item.drag-over {
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
+}
+
+.upload-item.drag-over .preview-wrapper {
+  border: 3rpx dashed #1677ff;
+  background: #e6f4ff;
+}
+
 .form-item {
   margin-bottom: 16rpx;
 }
@@ -687,6 +1134,104 @@ textarea {
   flex-direction: column;
   align-items: center;
   gap: 8rpx;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), 
+              opacity 0.15s ease;
+  
+  &.selected {
+    .preview-wrapper {
+      border: 3rpx solid #1677ff;
+      box-shadow: 0 0 0 2rpx rgba(22, 119, 255, 0.2);
+    }
+  }
+  
+  &.is-placeholder {
+    opacity: 0.2;
+    transform: scale(0.92);
+    pointer-events: none;
+  }
+  
+  &.is-rearranging {
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), 
+                opacity 0.2s ease;
+  }
+}
+
+.select-indicator {
+  position: absolute;
+  top: -8rpx;
+  left: -8rpx;
+  z-index: 10;
+  background: #fff;
+  border-radius: 50%;
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+}
+
+.drag-container {
+  width: 100%;
+  min-height: 400rpx;
+  position: relative;
+}
+
+.movable-item {
+  width: 160rpx;
+  height: auto;
+  z-index: 999;
+  pointer-events: none;
+}
+
+.drag-handle-zone {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+  border-radius: 12rpx;
+  margin-top: 8rpx;
+  
+  &:active {
+    background: #e0e0e0;
+  }
+}
+
+.drag-handle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-item.dragging {
+  box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.3);
+  opacity: 0.9;
+  transform: scale(1.05);
+  pointer-events: none;
+}
+
+.sort-badge {
+  position: absolute;
+  bottom: 8rpx;
+  left: -8rpx;
+  width: 36rpx;
+  height: 36rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+
+.sort-text {
+  font-size: 20rpx;
+  color: #fff;
+  font-weight: 600;
 }
 
 .preview-wrapper {
@@ -764,6 +1309,69 @@ textarea {
 .hint-text {
   font-size: 24rpx;
   color: #999;
+}
+
+.hint-text-bottom {
+  margin-top: 16rpx;
+  text-align: center;
+}
+
+.action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #f0f0f0;
+}
+
+.action-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.select-all-btn {
+  font-size: 26rpx;
+  color: #1677ff;
+}
+
+.selected-count {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.action-bar-right {
+  display: flex;
+  gap: 16rpx;
+}
+
+.action-bar-btn {
+  padding: 12rpx 28rpx;
+  border-radius: 32rpx;
+  font-size: 26rpx;
+  border: none;
+  line-height: 1;
+  
+  &.preview {
+    background: #e6f4ff;
+    color: #1677ff;
+    
+    &[disabled] {
+      background: #f5f5f5;
+      color: #ccc;
+    }
+  }
+  
+  &.delete {
+    background: #fff2f0;
+    color: #ff4d4f;
+    
+    &[disabled] {
+      background: #f5f5f5;
+      color: #ccc;
+    }
+  }
 }
 
 .primary {
@@ -940,11 +1548,19 @@ textarea {
 
 .attachments-header {
   margin-bottom: 12rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .attachments-title {
   font-size: 24rpx;
   color: #999;
+}
+
+.attachments-hint {
+  font-size: 20rpx;
+  color: #1677ff;
 }
 
 .attachments-list {
@@ -960,6 +1576,11 @@ textarea {
   padding: 12rpx;
   background: #fafafa;
   border-radius: 12rpx;
+  transition: background 0.2s ease;
+  
+  &:active {
+    background: #f0f0f0;
+  }
 }
 
 .attachment-icon {
@@ -971,6 +1592,23 @@ textarea {
   background: #e6f7ff;
   border-radius: 12rpx;
   overflow: hidden;
+  position: relative;
+  
+  &.type-image {
+    background: #f0f5ff;
+  }
+  
+  &.type-pdf {
+    background: #fff7e6;
+  }
+  
+  &.type-other {
+    background: #f6ffed;
+  }
+}
+
+.pdf-icon {
+  font-size: 36rpx;
 }
 
 .attachment-preview {

@@ -41,23 +41,29 @@
       </view>
 
       <view class="info-section" v-if="detail.receipts && detail.receipts.length">
-        <view class="section-title">票据附件 ({{ detail.receipts.length }})</view>
+        <view class="section-header">
+          <view class="section-title">票据附件 ({{ detail.receipts.length }})</view>
+          <text class="hint-text" v-if="detail.receipts.length > 1">点击图片可滑动浏览</text>
+        </view>
         <view class="attachments-grid">
           <view 
             class="attachment-item" 
-            v-for="(receipt, index) in detail.receipts" 
-            :key="index"
+            v-for="receipt in detail.receipts" 
+            :key="receipt.id"
             @click="viewAttachment(receipt)"
           >
-            <view class="attachment-preview">
+            <view class="attachment-preview" :class="getAttachmentDisplay(receipt.file_name).typeClass">
               <image 
-                v-if="isImageFile(receipt.file_name)" 
+                v-if="getAttachmentDisplay(receipt.file_name).isImage" 
                 :src="resolveAssetUrl(receipt.url)" 
                 mode="aspectFill" 
                 class="preview-image"
               />
               <view v-else class="preview-icon">
-                <text class="icon-text">📄</text>
+                <text class="icon-text">{{ getAttachmentDisplay(receipt.file_name).icon }}</text>
+              </view>
+              <view class="file-type-badge" v-if="!getAttachmentDisplay(receipt.file_name).isImage">
+                <text class="badge-text">{{ getAttachmentDisplay(receipt.file_name).badgeText }}</text>
               </view>
             </view>
             <text class="attachment-name">{{ receipt.file_name || '票据附件' }}</text>
@@ -80,6 +86,24 @@
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { api, resolveAssetUrl } from '../../utils/request'
+import { 
+  getFileExtension, 
+  isImageFile, 
+  isPdfFile,
+  getFileIcon,
+  getFileTypeKey,
+  previewAttachment
+} from '../../utils/attachment-preview'
+
+const getAttachmentDisplay = (fileName) => {
+  return {
+    isImage: isImageFile(fileName),
+    isPdf: isPdfFile(fileName),
+    typeClass: `type-${getFileTypeKey(fileName)}`,
+    icon: getFileIcon(fileName),
+    badgeText: getFileExtension(fileName).toUpperCase()
+  }
+}
 
 const detail = ref(null)
 const loading = ref(true)
@@ -88,12 +112,6 @@ const reimburseId = ref(null)
 const formatDateTime = (dateStr) => {
   if (!dateStr) return '-'
   return dateStr.replace('T', ' ').substring(0, 16)
-}
-
-const isImageFile = (fileName) => {
-  if (!fileName) return true
-  const ext = fileName.split('.').pop()?.toLowerCase()
-  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)
 }
 
 const loadDetail = async (id) => {
@@ -115,26 +133,8 @@ const loadDetail = async (id) => {
 
 const viewAttachment = (receipt) => {
   if (!receipt?.url) return
-
-  if (isImageFile(receipt.file_name)) {
-    const imageUrls = detail.value.receipts
-      .filter((r) => isImageFile(r.file_name))
-      .map((r) => resolveAssetUrl(r.url))
-    
-    if (imageUrls.length > 0) {
-      const current = resolveAssetUrl(receipt.url)
-      uni.previewImage({
-        urls: imageUrls,
-        current: current
-      })
-    }
-  } else {
-    uni.showModal({
-      title: '查看附件',
-      content: receipt.file_name || '票据附件',
-      showCancel: false
-    })
-  }
+  const siblings = detail.value?.receipts || [receipt]
+  previewAttachment(receipt, siblings, resolveAssetUrl).catch(() => {})
 }
 
 onLoad((query) => {
@@ -217,11 +217,23 @@ onShow(() => {
   margin-bottom: 0;
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
 .section-title {
   font-size: 28rpx;
   font-weight: 600;
   color: #333;
-  margin-bottom: 16rpx;
+  margin-bottom: 0;
+}
+
+.hint-text {
+  font-size: 22rpx;
+  color: #999;
 }
 
 .info-row {
@@ -296,6 +308,19 @@ onShow(() => {
   background: #fff;
   border-radius: 8rpx;
   overflow: hidden;
+  position: relative;
+  
+  &.type-pdf {
+    background: #fff7e6;
+  }
+  
+  &.type-image {
+    background: #f0f5ff;
+  }
+  
+  &.type-other {
+    background: #f6ffed;
+  }
 }
 
 .preview-image {
@@ -313,6 +338,21 @@ onShow(() => {
 
 .icon-text {
   font-size: 48rpx;
+}
+
+.file-type-badge {
+  position: absolute;
+  bottom: 8rpx;
+  right: 8rpx;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.badge-text {
+  font-size: 20rpx;
+  color: #fff;
+  font-weight: 600;
 }
 
 .attachment-name {
