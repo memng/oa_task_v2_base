@@ -277,10 +277,90 @@ class Order extends ApiController
             return $task['status'] === 'completed' ? 1 : 0;
         }, $tasks));
         $progress = $tasks ? round($completed / count($tasks) * 100, 2) : 0;
+        $stageProgress = $detail['stage_progress'] ?? $this->service->calculateStageProgress((int)$id);
         return $this->success([
-            'order_status' => $detail['order']['status'],
-            'tasks'    => $tasks,
-            'progress' => $progress,
+            'order_status'   => $detail['order']['status'],
+            'tasks'          => $tasks,
+            'progress'       => $progress,
+            'stage_progress' => $stageProgress,
+        ]);
+    }
+
+    public function stageTransition($id)
+    {
+        $order = Db::table('orders')->where('id', (int)$id)->find();
+        if (!$order) {
+            $this->errorResponse('订单不存在', 404);
+        }
+
+        $user = $this->user();
+        $isCreator = (int)($order['initiator_id'] ?? 0) === (int)$user['id'];
+        $isAdmin = \user_belongs_to_admin_dept($user);
+        if (!$isCreator && !$isAdmin) {
+            $this->errorResponse('只有订单创建人或管理员可以推进阶段', 403);
+        }
+
+        $data = $this->requestData();
+        $toStage = $data['to_stage'] ?? '';
+        $delayReason = $data['delay_reason'] ?? null;
+        $allowSkip = !empty($data['allow_skip']) && $isAdmin;
+
+        if (empty($toStage)) {
+            $this->errorResponse('请指定目标阶段');
+        }
+
+        try {
+            $this->service->transitionStage((int)$id, $toStage, $delayReason, (int)$user['id'], $allowSkip);
+        } catch (\Throwable $e) {
+            $this->errorResponse($e->getMessage(), 422);
+        }
+
+        return $this->success([], '阶段推进成功');
+    }
+
+    public function taskDelayReason($id, $taskId)
+    {
+        $task = Db::table('tasks')->where('id', (int)$taskId)->where('order_id', (int)$id)->find();
+        if (!$task) {
+            $this->errorResponse('任务不存在', 404);
+        }
+
+        $data = $this->requestData();
+        $delayReason = $data['delay_reason'] ?? '';
+        if (empty(trim($delayReason))) {
+            $this->errorResponse('请填写延期原因');
+        }
+
+        try {
+            $this->service->recordTaskDelayReason((int)$taskId, trim($delayReason), (int)$this->user()['id']);
+        } catch (\Throwable $e) {
+            $this->errorResponse($e->getMessage(), 422);
+        }
+
+        return $this->success([], '延期原因已记录');
+    }
+
+    public function stageHistory($id)
+    {
+        $order = Db::table('orders')->where('id', (int)$id)->find();
+        if (!$order) {
+            $this->errorResponse('订单不存在', 404);
+        }
+
+        $transitions = $this->service->getStageTransitions((int)$id);
+        $stageProgress = $this->service->calculateStageProgress((int)$id);
+
+        return $this->success([
+            'transitions'    => $transitions,
+            'stage_progress' => $stageProgress,
+            'stages'         => OrderService::getStages(),
+        ]);
+    }
+
+    public function stages()
+    {
+        return $this->success([
+            'stages' => OrderService::getStages(),
         ]);
     }
 

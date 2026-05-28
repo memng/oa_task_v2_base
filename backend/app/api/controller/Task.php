@@ -25,6 +25,7 @@ class Task extends ApiController
             ->leftJoin('orders o', 'o.id = t.order_id')
             ->leftJoin('users au', 'au.id = t.assigned_to')
             ->leftJoin('users cu', 'cu.id = t.created_by')
+            ->leftJoin('users dru', 'dru.id = t.delay_reason_updated_by')
             ->leftJoin('task_procurements tp', 'tp.task_id = t.id');
 
         if ($status = Request::get('status')) {
@@ -96,20 +97,7 @@ class Task extends ApiController
 
         $this->applyVisibilityFilter($query, $user, $isAdminDept);
 
-        $rows = $query->field([
-            't.*',
-            'o.pi_number as order_pi_number',
-            'o.customer_name as order_customer_name',
-            'au.name as assignee_name',
-            'cu.name as creator_name',
-            'tp.supplier_id',
-            'tp.supplier_name',
-            'tp.purchase_price',
-            'tp.currency as procurement_currency',
-            'tp.source_location',
-            'tp.purchase_status',
-            'tp.delivery_date',
-        ])
+        $rows = $query->field(TaskService::getFullTaskFields())
             ->order('t.due_at', 'asc')
             ->order('t.id', 'desc')
             ->select()
@@ -570,6 +558,7 @@ class Task extends ApiController
             ->leftJoin('orders o', 'o.id = t.order_id')
             ->leftJoin('users au', 'au.id = t.assigned_to')
             ->leftJoin('users cu', 'cu.id = t.created_by')
+            ->leftJoin('users dru', 'dru.id = t.delay_reason_updated_by')
             ->leftJoin('task_procurements tp', 'tp.task_id = t.id')
             ->where('tf.user_id', $userId);
 
@@ -591,20 +580,7 @@ class Task extends ApiController
         }
 
         $total = (int)$query->count();
-        $rows = $query->field([
-            't.*',
-            'o.pi_number as order_pi_number',
-            'o.customer_name as order_customer_name',
-            'au.name as assignee_name',
-            'cu.name as creator_name',
-            'tp.supplier_id',
-            'tp.supplier_name',
-            'tp.purchase_price',
-            'tp.currency as procurement_currency',
-            'tp.source_location',
-            'tp.purchase_status',
-            'tp.delivery_date',
-        ])
+        $rows = $query->field(TaskService::getFullTaskFields())
             ->order('tf.created_at', 'desc')
             ->order('t.id', 'desc')
             ->select()
@@ -646,23 +622,9 @@ class Task extends ApiController
             ->leftJoin('orders o', 'o.id = t.order_id')
             ->leftJoin('users au', 'au.id = t.assigned_to')
             ->leftJoin('users cu', 'cu.id = t.created_by')
+            ->leftJoin('users dru', 'dru.id = t.delay_reason_updated_by')
             ->leftJoin('task_procurements tp', 'tp.task_id = t.id')
-            ->field([
-                't.*',
-                'o.pi_number as order_pi_number',
-                'o.customer_name as order_customer_name',
-                'o.initiator_id as order_initiator_id',
-                'o.sales_owner_id as order_sales_owner_id',
-                'au.name as assignee_name',
-                'cu.name as creator_name',
-                'tp.supplier_id',
-                'tp.supplier_name',
-                'tp.purchase_price',
-                'tp.currency as procurement_currency',
-                'tp.source_location',
-                'tp.purchase_status',
-                'tp.delivery_date',
-            ])
+            ->field(TaskService::getFullTaskFields())
             ->where('t.id', $id)
             ->find();
         if (!$row) {

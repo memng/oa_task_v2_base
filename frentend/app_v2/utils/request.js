@@ -211,6 +211,18 @@ export const api = {
   orderProgress(id) {
     return request({ url: `/orders/${id}/progress` })
   },
+  orderStages() {
+    return request({ url: '/orders/stages' })
+  },
+  orderStageTransition(id, payload) {
+    return request({ url: `/orders/${id}/stage-transition`, method: 'POST', data: payload })
+  },
+  orderTaskDelayReason(orderId, taskId, payload) {
+    return request({ url: `/orders/${orderId}/tasks/${taskId}/delay-reason`, method: 'POST', data: payload })
+  },
+  orderStageHistory(id) {
+    return request({ url: `/orders/${id}/stage-history` })
+  },
   cancelOrder(id) {
     return request({ url: `/orders/${id}/cancel`, method: 'POST' })
   },

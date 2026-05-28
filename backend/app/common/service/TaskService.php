@@ -6,6 +6,58 @@ use think\facade\Db;
 
 class TaskService
 {
+    public const TASK_SELECT_FIELDS = [
+        't.id',
+        't.order_id',
+        't.order_product_id',
+        't.parent_task_id',
+        't.type',
+        't.title',
+        't.description',
+        't.assigned_to',
+        't.created_by',
+        't.start_at',
+        't.due_at',
+        't.completed_at',
+        't.delay_reason',
+        't.delay_reason_updated_at',
+        't.delay_reason_updated_by',
+        't.status',
+        't.need_audit',
+        't.priority',
+        't.payload',
+        't.created_at',
+        't.updated_at',
+    ];
+
+    public const TASK_JOIN_FIELDS = [
+        'o.pi_number as order_pi_number',
+        'o.customer_name as order_customer_name',
+        'o.initiator_id as order_initiator_id',
+        'o.sales_owner_id as order_sales_owner_id',
+        'au.name as assignee_name',
+        'cu.name as creator_name',
+        'dru.name as delay_reason_updated_by_name',
+        'tp.supplier_id',
+        'tp.supplier_name',
+        'tp.purchase_price',
+        'tp.currency as procurement_currency',
+        'tp.source_location',
+        'tp.purchase_status',
+        'tp.delivery_date',
+    ];
+
+    public const TASK_REQUIRED_OUTPUT_FIELDS = [
+        'id', 'type', 'title', 'status',
+        'delay_reason', 'delay_reason_updated_at', 'delay_reason_updated_by',
+        'delay_reason_updated_by_name',
+    ];
+
+    public static function getFullTaskFields(): array
+    {
+        return array_merge(self::TASK_SELECT_FIELDS, self::TASK_JOIN_FIELDS);
+    }
+
     protected NotificationService $notificationService;
 
     public function __construct()
@@ -349,6 +401,26 @@ class TaskService
 
     public function formatTaskList(array $rows, bool $canSeeProcurement = false): array
     {
+        $requiredFields = self::TASK_REQUIRED_OUTPUT_FIELDS;
+        foreach ($rows as $idx => $row) {
+            $missingFields = [];
+            foreach ($requiredFields as $field) {
+                if (!array_key_exists($field, $row)) {
+                    $missingFields[] = $field;
+                }
+            }
+            if (!empty($missingFields)) {
+                \think\facade\Log::warning(sprintf(
+                    'formatTaskList: row #%d missing required fields: %s. Task data may be incomplete.',
+                    $idx,
+                    implode(', ', $missingFields)
+                ));
+                foreach ($missingFields as $field) {
+                    $rows[$idx][$field] = null;
+                }
+            }
+        }
+
         $statusMap = [
             'pending'       => '待开始',
             'in_progress'   => '进行中',
@@ -396,8 +468,12 @@ class TaskService
                 'creator_name'      => $row['creator_name'] ?? null,
                 'start_at'          => $row['start_at'],
                 'due_at'            => $row['due_at'],
-                'completed_at'      => $row['completed_at'],
-                'status'            => $row['status'],
+                'completed_at'              => $row['completed_at'],
+                'delay_reason'              => $row['delay_reason'] ?? null,
+                'delay_reason_updated_at'   => $row['delay_reason_updated_at'] ?? null,
+                'delay_reason_updated_by'   => isset($row['delay_reason_updated_by']) ? (int)$row['delay_reason_updated_by'] : null,
+                'delay_reason_updated_by_name' => $row['delay_reason_updated_by_name'] ?? null,
+                'status'                    => $row['status'],
                 'need_audit'        => (int)($row['need_audit'] ?? 0),
                 'priority'          => (int)($row['priority'] ?? 3),
                 'payload'           => $payload,

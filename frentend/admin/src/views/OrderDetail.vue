@@ -44,9 +44,48 @@
           <span v-else class="muted">-</span>
         </el-descriptions-item>
       </el-descriptions>
-      <div class="progress-box">
-        <span>任务完成度</span>
-        <el-progress :percentage="progressPercent" :stroke-width="16" />
+    </el-card>
+
+    <el-card class="stage-card">
+      <template #header>
+        <div class="card-header">
+          <span>阶段进度</span>
+          <span class="muted" v-if="stageProgress">
+            整体完成 {{ stageProgress.overall_progress }}%
+          </span>
+        </div>
+      </template>
+      <div v-if="stageProgress" class="stage-stepper">
+        <div
+          v-for="(stage, idx) in stageProgress.stages"
+          :key="stage.stage"
+          class="stage-step"
+          :class="{
+            'is-completed': stage.status === 'completed',
+            'is-current': stage.stage === stageProgress.current_stage,
+            'is-overdue': stage.status === 'overdue',
+            'is-pending': stage.status === 'pending',
+            'is-progress': stage.status === 'in_progress',
+          }"
+        >
+          <div class="stage-node" @click="handleStageClick(stage)">
+            <div class="stage-icon">
+              <el-icon v-if="stage.status === 'completed'" :size="20"><Check /></el-icon>
+              <el-icon v-else-if="stage.status === 'overdue'" :size="20"><Warning /></el-icon>
+              <span v-else class="stage-order">{{ stage.order }}</span>
+            </div>
+            <div class="stage-label">{{ stage.label }}</div>
+            <div class="stage-meta" v-if="stage.total_tasks > 0">
+              {{ stage.completed_tasks }}/{{ stage.total_tasks }}
+            </div>
+            <el-tag v-if="stage.status === 'overdue'" type="danger" size="small" class="overdue-tag">超期</el-tag>
+            <el-tag v-if="stage.has_delay_reason" type="warning" size="small" class="overdue-tag">已说明</el-tag>
+          </div>
+          <div v-if="idx < stageProgress.stages.length - 1" class="stage-connector" :class="{ 'is-done': stage.status === 'completed' }" />
+        </div>
+      </div>
+      <div class="progress-bar-wrap" v-if="stageProgress">
+        <el-progress :percentage="stageProgress.overall_progress" :stroke-width="14" :color="progressColor" />
       </div>
     </el-card>
 
@@ -126,6 +165,13 @@
             <el-tag :type="taskStatusTag(row.status)">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="延期" width="100">
+          <template #default="{ row }">
+            <el-button v-if="isTaskOverdue(row) && !row.delay_reason" type="danger" size="small" link @click="openDelayDialog(row)">填写原因</el-button>
+            <el-tag v-else-if="row.delay_reason" type="warning" size="small">已说明</el-tag>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -159,6 +205,40 @@
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog v-model="delayDialog" title="填写延期原因" width="480px">
+      <el-form label-width="80px">
+        <el-form-item label="延期原因">
+          <el-input type="textarea" v-model="delayForm.reason" :rows="4" placeholder="请说明延期原因" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="delayDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitDelayReason" :loading="delaySubmitting">提交</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="stageTransitionDialog" title="推进阶段" width="480px">
+      <el-form label-width="80px">
+        <el-form-item label="目标阶段">
+          <el-select v-model="stageTransitionForm.to_stage" placeholder="请选择目标阶段">
+            <el-option
+              v-for="s in availableNextStages"
+              :key="s.value"
+              :label="s.label"
+              :value="s.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="currentStageIsOverdue" label="延期原因">
+          <el-input type="textarea" v-model="stageTransitionForm.delay_reason" :rows="3" placeholder="当前阶段超期，请说明延期原因" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="stageTransitionDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitStageTransition" :loading="stageTransitionSubmitting">确认推进</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -166,6 +246,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Check, Warning } from '@element-plus/icons-vue'
 import { ASSET_BASE_URL, api } from '../api'
 
 const route = useRoute()
@@ -174,6 +255,12 @@ const detail = ref(null)
 const loading = ref(false)
 const taskDrawer = ref(false)
 const taskSubmitting = ref(false)
+const delayDialog = ref(false)
+const delaySubmitting = ref(false)
+const stageTransitionDialog = ref(false)
+const stageTransitionSubmitting = ref(false)
+const delayForm = reactive({ taskId: null, reason: '' })
+const stageTransitionForm = reactive({ to_stage: '', delay_reason: '' })
 const statusMap = {
   draft: '草稿',
   in_progress: '进行中',
@@ -209,6 +296,30 @@ const piDisplay = computed(() => {
   return detail.value?.order?.pi_number || '-'
 })
 const documentList = computed(() => detail.value?.documents || [])
+
+const stageProgress = computed(() => detail.value?.stage_progress || null)
+
+const progressColor = computed(() => {
+  if (!stageProgress.value) return '#409eff'
+  const p = stageProgress.value.overall_progress
+  if (p >= 100) return '#67c23a'
+  if (p >= 60) return '#409eff'
+  if (p >= 30) return '#e6a23c'
+  return '#f56c6c'
+})
+
+const availableNextStages = computed(() => {
+  if (!stageProgress.value) return []
+  const stages = stageProgress.value.stages || []
+  const currentIdx = stages.findIndex(s => s.stage === stageProgress.value.current_stage)
+  return stages.filter((s, idx) => idx > currentIdx).map(s => ({ value: s.stage, label: s.label }))
+})
+
+const currentStageIsOverdue = computed(() => {
+  if (!stageProgress.value) return false
+  const current = (stageProgress.value.stages || []).find(s => s.stage === stageProgress.value.current_stage)
+  return current?.is_overdue || false
+})
 
 const fetchDetail = async () => {
   loading.value = true
@@ -298,6 +409,12 @@ const progressPercent = computed(() => {
   return Math.round((done / total) * 100)
 })
 
+const isTaskOverdue = (task) => {
+  if (task.status === 'completed' || task.status === 'cancelled') return false
+  if (!task.due_at) return false
+  return new Date(task.due_at) < new Date()
+}
+
 const openTaskForm = () => {
   taskDrawer.value = true
 }
@@ -333,6 +450,59 @@ const submitTask = async () => {
   }
 }
 
+const openDelayDialog = (task) => {
+  delayForm.taskId = task.id
+  delayForm.reason = ''
+  delayDialog.value = true
+}
+
+const submitDelayReason = async () => {
+  if (!delayForm.reason.trim()) {
+    ElMessage.warning('请填写延期原因')
+    return
+  }
+  delaySubmitting.value = true
+  try {
+    await api.orderTaskDelayReason(taskForm.order_id, delayForm.taskId, { delay_reason: delayForm.reason })
+    ElMessage.success('延期原因已记录')
+    delayDialog.value = false
+    await fetchDetail()
+  } catch (error) {
+    console.error(error)
+  } finally {
+    delaySubmitting.value = false
+  }
+}
+
+const handleStageClick = (stage) => {
+  if (stage.stage === stageProgress.value?.current_stage && stage.status !== 'completed') {
+    stageTransitionForm.to_stage = ''
+    stageTransitionForm.delay_reason = ''
+    stageTransitionDialog.value = true
+  }
+}
+
+const submitStageTransition = async () => {
+  if (!stageTransitionForm.to_stage) {
+    ElMessage.warning('请选择目标阶段')
+    return
+  }
+  stageTransitionSubmitting.value = true
+  try {
+    await api.orderStageTransition(route.params.id, {
+      to_stage: stageTransitionForm.to_stage,
+      delay_reason: stageTransitionForm.delay_reason || null
+    })
+    ElMessage.success('阶段推进成功')
+    stageTransitionDialog.value = false
+    await fetchDetail()
+  } catch (error) {
+    console.error(error)
+  } finally {
+    stageTransitionSubmitting.value = false
+  }
+}
+
 const goEdit = () => {
   if (detail.value?.order?.id) {
     router.push(`/orders/${detail.value.order.id}/edit`)
@@ -356,6 +526,101 @@ onMounted(fetchDetail)
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.stage-card {
+  margin-top: 8px;
+}
+.stage-stepper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+.stage-step {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+.stage-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  min-width: 80px;
+}
+.stage-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  border: 2px solid #dcdfe6;
+  background: #fff;
+  color: #909399;
+  transition: all 0.3s;
+}
+.stage-step.is-completed .stage-icon {
+  background: #67c23a;
+  border-color: #67c23a;
+  color: #fff;
+}
+.stage-step.is-current .stage-icon {
+  background: #409eff;
+  border-color: #409eff;
+  color: #fff;
+}
+.stage-step.is-overdue .stage-icon {
+  background: #f56c6c;
+  border-color: #f56c6c;
+  color: #fff;
+}
+.stage-step.is-progress .stage-icon {
+  border-color: #409eff;
+  color: #409eff;
+}
+.stage-order {
+  font-size: 14px;
+}
+.stage-label {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #606266;
+  text-align: center;
+  white-space: nowrap;
+}
+.stage-step.is-completed .stage-label {
+  color: #67c23a;
+}
+.stage-step.is-current .stage-label {
+  color: #409eff;
+  font-weight: 600;
+}
+.stage-step.is-overdue .stage-label {
+  color: #f56c6c;
+}
+.stage-meta {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 2px;
+}
+.overdue-tag {
+  margin-top: 4px;
+}
+.stage-connector {
+  flex: 1;
+  height: 2px;
+  background: #dcdfe6;
+  margin: 18px 4px 0;
+  min-width: 20px;
+}
+.stage-connector.is-done {
+  background: #67c23a;
+}
+.progress-bar-wrap {
+  margin-top: 16px;
 }
 .progress-box {
   margin-top: 24px;

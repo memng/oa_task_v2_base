@@ -48,6 +48,18 @@ export const api = {
   orderProgress(id) {
     return client.get(`/orders/${id}/progress`)
   },
+  orderStages() {
+    return client.get('/orders/stages')
+  },
+  orderStageTransition(id, data) {
+    return client.post(`/orders/${id}/stage-transition`, data)
+  },
+  orderTaskDelayReason(orderId, taskId, data) {
+    return client.post(`/orders/${orderId}/tasks/${taskId}/delay-reason`, data)
+  },
+  orderStageHistory(id) {
+    return client.get(`/orders/${id}/stage-history`)
+  },
   tasks(params) {
     return client.get('/tasks', { params })
   },

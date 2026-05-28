@@ -8,8 +8,402 @@ use think\facade\Db;
 
 class OrderService
 {
+    public const ORDER_STAGES = [
+        'procurement'  => ['label' => '采购', 'order' => 1, 'task_types' => ['procurement', 'factory_order']],
+        'nameplate'    => ['label' => '铭牌制作', 'order' => 2, 'task_types' => ['nameplate']],
+        'machine_data' => ['label' => '机器数据', 'order' => 3, 'task_types' => ['machine_data']],
+        'acceptance'   => ['label' => '机器验收', 'order' => 4, 'task_types' => ['acceptance']],
+        'packaging'    => ['label' => '打包唛头', 'order' => 5, 'task_types' => ['packaging']],
+        'shipment'     => ['label' => '装柜发货', 'order' => 6, 'task_types' => ['shipment']],
+    ];
+
+    public const STAGE_ORDER = ['procurement', 'nameplate', 'machine_data', 'acceptance', 'packaging', 'shipment'];
+
     protected TaskService $taskService;
     protected NotificationService $notificationService;
+
+    public static function getStages(): array
+    {
+        $result = [];
+        foreach (self::ORDER_STAGES as $key => $stage) {
+            $result[] = [
+                'value'      => $key,
+                'label'      => $stage['label'],
+                'order'      => $stage['order'],
+                'task_types' => $stage['task_types'],
+            ];
+        }
+        return $result;
+    }
+
+    public function detectCurrentStage(int $orderId): ?string
+    {
+        $result = $this->resolveStageStatus($orderId);
+        return $result['current_stage'];
+    }
+
+    public function resolveStageStatus(int $orderId): array
+    {
+        $tasks = Db::table('tasks')
+            ->where('order_id', $orderId)
+            ->whereNotIn('status', ['cancelled'])
+            ->select()
+            ->toArray();
+
+        $hasAnyTask = !empty($tasks);
+        $now = date('Y-m-d H:i:s');
+        $stageDetails = [];
+        $completedStages = 0;
+        $effectiveCompletedStages = 0;
+        $currentStageKey = null;
+        $currentStageProgress = 0;
+        $allStagesCompleted = true;
+
+        foreach (self::STAGE_ORDER as $stageKey) {
+            $stageDef = self::ORDER_STAGES[$stageKey];
+            $stageTypes = $stageDef['task_types'];
+            $stageTasks = array_values(array_filter($tasks, function ($task) use ($stageTypes) {
+                return in_array($task['type'], $stageTypes, true);
+            }));
+
+            if (empty($stageTasks)) {
+                if ($hasAnyTask) {
+                    $stageDetails[] = [
+                        'stage'              => $stageKey,
+                        'label'              => $stageDef['label'],
+                        'order'              => $stageDef['order'],
+                        'total_tasks'        => 0,
+                        'completed_tasks'    => 0,
+                        'progress_percent'   => 100,
+                        'status'             => 'auto_completed',
+                        'is_overdue'         => false,
+                        'has_delay_reason'   => false,
+                        'has_tasks'          => false,
+                    ];
+                    $effectiveCompletedStages++;
+                } else {
+                    $stageDetails[] = [
+                        'stage'              => $stageKey,
+                        'label'              => $stageDef['label'],
+                        'order'              => $stageDef['order'],
+                        'total_tasks'        => 0,
+                        'completed_tasks'    => 0,
+                        'progress_percent'   => 0,
+                        'status'             => 'no_tasks',
+                        'is_overdue'         => false,
+                        'has_delay_reason'   => false,
+                        'has_tasks'          => false,
+                    ];
+                    $allStagesCompleted = false;
+                    if ($currentStageKey === null) {
+                        $currentStageKey = $stageKey;
+                        $currentStageProgress = 0;
+                    }
+                }
+                continue;
+            }
+
+            $total = count($stageTasks);
+            $completed = count(array_filter($stageTasks, function ($t) {
+                return $t['status'] === 'completed';
+            }));
+            $progressPercent = $total > 0 ? round($completed / $total * 100, 2) : 0;
+
+            $isOverdue = false;
+            $hasDelayReason = false;
+            foreach ($stageTasks as $t) {
+                if (!empty($t['due_at']) && $t['due_at'] < $now && $t['status'] !== 'completed') {
+                    $isOverdue = true;
+                }
+                if (!empty($t['delay_reason'])) {
+                    $hasDelayReason = true;
+                }
+            }
+
+            $status = 'pending';
+            $isStageCompleted = false;
+            if ($completed === $total) {
+                $status = 'completed';
+                $completedStages++;
+                $effectiveCompletedStages++;
+                $isStageCompleted = true;
+            } elseif ($completed > 0) {
+                $status = 'in_progress';
+            }
+            if ($isOverdue && $status !== 'completed') {
+                $status = 'overdue';
+            }
+
+            if (!$isStageCompleted && $currentStageKey === null) {
+                $currentStageKey = $stageKey;
+                $currentStageProgress = $progressPercent;
+            }
+
+            if (!$isStageCompleted) {
+                $allStagesCompleted = false;
+            }
+
+            $stageDetails[] = [
+                'stage'              => $stageKey,
+                'label'              => $stageDef['label'],
+                'order'              => $stageDef['order'],
+                'total_tasks'        => $total,
+                'completed_tasks'    => $completed,
+                'progress_percent'   => $progressPercent,
+                'status'             => $status,
+                'is_overdue'         => $isOverdue,
+                'has_delay_reason'   => $hasDelayReason,
+                'has_tasks'          => true,
+            ];
+        }
+
+        $totalStages = count(self::STAGE_ORDER);
+        if ($allStagesCompleted) {
+            $currentStageKey = null;
+            $currentStageProgress = 0;
+        }
+
+        $overallProgress = 0;
+        if ($totalStages > 0) {
+            if ($allStagesCompleted) {
+                $overallProgress = 100;
+            } elseif ($currentStageKey !== null) {
+                $overallProgress = round(($effectiveCompletedStages * 100 + $currentStageProgress) / $totalStages, 2);
+            }
+        }
+        $overallProgress = min(max($overallProgress, 0), 100);
+
+        $currentStageLabel = null;
+        if ($currentStageKey !== null) {
+            $currentStageLabel = self::ORDER_STAGES[$currentStageKey]['label'] ?? null;
+        }
+
+        return [
+            'stages'                     => $stageDetails,
+            'current_stage'              => $currentStageKey,
+            'current_stage_label'        => $currentStageLabel,
+            'current_stage_progress'     => $currentStageProgress,
+            'completed_stages'           => $completedStages,
+            'effective_completed_stages' => $effectiveCompletedStages,
+            'total_stages'               => $totalStages,
+            'overall_progress'           => $overallProgress,
+            'is_all_completed'           => $allStagesCompleted,
+            'has_any_task'               => $hasAnyTask,
+        ];
+    }
+
+    public function calculateStageProgress(int $orderId): array
+    {
+        return $this->resolveStageStatus($orderId);
+    }
+
+    public function transitionStage(int $orderId, string $toStage, ?string $delayReason, int $operatorId, bool $allowSkip = false): void
+    {
+        $order = Db::table('orders')->where('id', $orderId)->find();
+        if (!$order) {
+            throw new \RuntimeException('订单不存在');
+        }
+        if (!isset(self::ORDER_STAGES[$toStage])) {
+            throw new \InvalidArgumentException('无效的目标阶段');
+        }
+
+        $fromStage = $order['current_stage'] ?? null;
+        $stageStatus = $this->resolveStageStatus($orderId);
+
+        if ($fromStage === null) {
+            if ($stageStatus['is_all_completed']) {
+                throw new \InvalidArgumentException('订单所有阶段已完成，无需推进');
+            }
+            if (!$stageStatus['has_any_task']) {
+                throw new \InvalidArgumentException('订单暂无任务，无法推进阶段，请先创建任务');
+            }
+            $fromStage = $stageStatus['current_stage'];
+        }
+
+        $fromOrder = self::ORDER_STAGES[$fromStage]['order'] ?? 0;
+        $toOrder = self::ORDER_STAGES[$toStage]['order'];
+
+        if ($toOrder <= $fromOrder) {
+            throw new \InvalidArgumentException('只能向前推进阶段，不能回退或停留在当前阶段');
+        }
+
+        $fromIdx = array_search($fromStage, self::STAGE_ORDER);
+        $toIdx = array_search($toStage, self::STAGE_ORDER);
+        if ($fromIdx === false || $toIdx === false) {
+            throw new \InvalidArgumentException('无效的阶段标识');
+        }
+
+        $isSkip = $toIdx > $fromIdx + 1;
+        if ($isSkip && !$allowSkip) {
+            $nextStage = self::STAGE_ORDER[$fromIdx + 1] ?? null;
+            $nextStageLabel = $nextStage ? (self::ORDER_STAGES[$nextStage]['label'] ?? $nextStage) : '下一阶段';
+            throw new \InvalidArgumentException(sprintf(
+                '不允许跳阶段推进，当前阶段为"%s"，请先推进到"%s"，如需跳阶段请联系管理员',
+                self::ORDER_STAGES[$fromStage]['label'] ?? $fromStage,
+                $nextStageLabel
+            ));
+        }
+
+        $allTasks = Db::table('tasks')
+            ->where('order_id', $orderId)
+            ->whereNotIn('status', ['cancelled'])
+            ->select()
+            ->toArray();
+
+        $now = date('Y-m-d H:i:s');
+        $anyOverdue = false;
+
+        $stagesToCheck = [$fromStage];
+        if ($isSkip && $allowSkip) {
+            for ($i = $fromIdx + 1; $i < $toIdx; $i++) {
+                $stagesToCheck[] = self::STAGE_ORDER[$i];
+            }
+        }
+
+        foreach ($stagesToCheck as $idx => $checkStage) {
+            $isFromStage = ($idx === 0);
+            $stageTypes = self::ORDER_STAGES[$checkStage]['task_types'];
+            $stageTasks = array_filter($allTasks, function ($task) use ($stageTypes) {
+                return in_array($task['type'], $stageTypes, true);
+            });
+
+            if (empty($stageTasks)) {
+                continue;
+            }
+
+            $incompleteTitles = [];
+            $stageOverdue = false;
+            $stageHasDelayReason = false;
+
+            foreach ($stageTasks as $task) {
+                if ($task['status'] !== 'completed') {
+                    $incompleteTitles[] = $task['title'];
+                }
+                if (!empty($task['due_at']) && $task['due_at'] < $now && $task['status'] !== 'completed') {
+                    $stageOverdue = true;
+                    $anyOverdue = true;
+                }
+                if (!empty($task['delay_reason'])) {
+                    $stageHasDelayReason = true;
+                }
+            }
+
+            if (!empty($incompleteTitles)) {
+                if ($isFromStage && !$allowSkip) {
+                    throw new \InvalidArgumentException(sprintf(
+                        '当前阶段「%s」还有未完成任务：%s，请先完成所有任务后再推进阶段',
+                        self::ORDER_STAGES[$checkStage]['label'] ?? $checkStage,
+                        implode('、', array_slice($incompleteTitles, 0, 3)) . (count($incompleteTitles) > 3 ? '等' : '')
+                    ));
+                }
+                if ($isFromStage && $allowSkip) {
+                    if (empty(trim($delayReason ?? ''))) {
+                        throw new \InvalidArgumentException(sprintf(
+                            '当前阶段「%s」还有未完成任务，跳阶段前必须填写延期原因',
+                            self::ORDER_STAGES[$checkStage]['label'] ?? $checkStage
+                        ));
+                    }
+                }
+                if (!$isFromStage && $allowSkip) {
+                    if ($stageOverdue && !$stageHasDelayReason && empty(trim($delayReason ?? ''))) {
+                        throw new \InvalidArgumentException(sprintf(
+                            '跳过的阶段「%s」有未完成任务且已超期，跳阶段前必须填写延期原因',
+                            self::ORDER_STAGES[$checkStage]['label'] ?? $checkStage
+                        ));
+                    }
+                }
+            }
+        }
+
+        $transitionType = 'forward';
+        if ($isSkip) {
+            $transitionType = 'skip';
+        }
+
+        $dbFromStage = $order['current_stage'] ?? null;
+        Db::transaction(function () use ($orderId, $dbFromStage, $toStage, $transitionType, $delayReason, $anyOverdue, $operatorId) {
+            Db::table('orders')->where('id', $orderId)->update([
+                'current_stage' => $toStage,
+                'updated_at'    => date('Y-m-d H:i:s'),
+            ]);
+
+            Db::table('order_stage_transitions')->insert([
+                'order_id'        => $orderId,
+                'from_stage'      => $dbFromStage,
+                'to_stage'        => $toStage,
+                'transition_type' => $transitionType,
+                'delay_reason'    => $delayReason,
+                'is_overdue'      => $anyOverdue ? 1 : 0,
+                'operator_id'     => $operatorId,
+                'created_at'      => date('Y-m-d H:i:s'),
+            ]);
+        });
+    }
+
+    public function recordTaskDelayReason(int $taskId, string $delayReason, int $operatorId): void
+    {
+        $task = Db::table('tasks')->where('id', $taskId)->find();
+        if (!$task) {
+            throw new \RuntimeException('任务不存在');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $oldReason = $task['delay_reason'] ?? '';
+        $isUpdate = !empty($oldReason);
+
+        Db::transaction(function () use ($taskId, $delayReason, $operatorId, $now, $oldReason, $isUpdate) {
+            Db::table('tasks')->where('id', $taskId)->update([
+                'delay_reason'             => $delayReason,
+                'delay_reason_updated_at'  => $now,
+                'delay_reason_updated_by'  => $operatorId,
+                'updated_at'               => $now,
+            ]);
+
+            $logMessage = $isUpdate
+                ? sprintf('更新延期原因：原因为「%s」→「%s」', mb_substr($oldReason, 0, 50, 'UTF-8') . (mb_strlen($oldReason, 'UTF-8') > 50 ? '...' : ''), mb_substr($delayReason, 0, 50, 'UTF-8') . (mb_strlen($delayReason, 'UTF-8') > 50 ? '...' : ''))
+                : sprintf('设置延期原因：「%s」', mb_substr($delayReason, 0, 50, 'UTF-8') . (mb_strlen($delayReason, 'UTF-8') > 50 ? '...' : ''));
+
+            Db::table('task_logs')->insert([
+                'task_id'    => $taskId,
+                'user_id'    => $operatorId,
+                'action'     => 'delay_reason_' . ($isUpdate ? 'updated' : 'set'),
+                'message'    => $logMessage,
+                'created_at' => $now,
+            ]);
+        });
+
+        if (!empty($task['order_id'])) {
+            $this->syncCurrentStage((int)$task['order_id']);
+        }
+    }
+
+    public function syncCurrentStage(int $orderId): void
+    {
+        $detected = $this->detectCurrentStage($orderId);
+        $order = Db::table('orders')->where('id', $orderId)->find();
+        if (!$order) {
+            return;
+        }
+        $oldStage = $order['current_stage'] ?? null;
+        if ($oldStage !== $detected) {
+            Db::table('orders')->where('id', $orderId)->update([
+                'current_stage' => $detected,
+                'updated_at'    => date('Y-m-d H:i:s'),
+            ]);
+        }
+    }
+
+    public function getStageTransitions(int $orderId): array
+    {
+        return Db::table('order_stage_transitions')
+            ->alias('st')
+            ->leftJoin('users u', 'u.id = st.operator_id')
+            ->field(['st.*', 'u.name as operator_name'])
+            ->where('st.order_id', $orderId)
+            ->order('st.id', 'asc')
+            ->select()
+            ->toArray();
+    }
 
     public function __construct()
     {
@@ -44,6 +438,7 @@ class OrderService
                 'customer_id'        => $payload['customer_id'] ?? null,
                 'customer_name'      => $payload['customer_name'] ?? '',
                 'status'             => $isDraft ? 'draft' : 'in_progress',
+                'current_stage'      => $isDraft ? null : 'procurement',
                 'initiator_id'       => $user['id'],
                 'sales_owner_id'     => $payload['sales_owner_id'] ?? $user['id'],
                 'currency'           => $payload['currency'] ?? 'CNY',
@@ -151,6 +546,7 @@ class OrderService
                     throw new \InvalidArgumentException('至少需要一个产品');
                 }
                 $update['status'] = 'in_progress';
+                $update['current_stage'] = 'procurement';
             }
 
             Db::table('orders')->where('id', $orderId)->update($update);
@@ -388,21 +784,9 @@ class OrderService
             ->leftJoin('orders o', 'o.id = t.order_id')
             ->leftJoin('users au', 'au.id = t.assigned_to')
             ->leftJoin('users cu', 'cu.id = t.created_by')
+            ->leftJoin('users dru', 'dru.id = t.delay_reason_updated_by')
             ->leftJoin('task_procurements tp', 'tp.task_id = t.id')
-            ->field([
-                't.*',
-                'o.pi_number as order_pi_number',
-                'o.customer_name as order_customer_name',
-                'au.name as assignee_name',
-                'cu.name as creator_name',
-                'tp.supplier_id',
-                'tp.supplier_name',
-                'tp.purchase_price',
-                'tp.currency as procurement_currency',
-                'tp.source_location',
-                'tp.purchase_status',
-                'tp.delivery_date',
-            ])
+            ->field(TaskService::getFullTaskFields())
             ->where('t.order_id', $orderId)
             ->order('t.id asc')
             ->select()
@@ -421,6 +805,7 @@ class OrderService
             'tasks'     => $tasks,
             'costs'     => $costs,
             'documents' => $documents,
+            'stage_progress' => $this->calculateStageProgress($orderId),
             'permissions'=> [
                 'can_view_procurement' => $canSeeProcurement,
             ],

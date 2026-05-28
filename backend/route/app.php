@@ -30,6 +30,10 @@ Route::group('api', function () {
     Route::get('reimburse', '\app\api\controller\Reimburse@index');
     Route::post('reimburse', '\app\api\controller\Reimburse@save');
 
+    Route::get('orders/stages', '\app\api\controller\Order@stages');
+    Route::post('orders/:id/stage-transition', '\app\api\controller\Order@stageTransition');
+    Route::post('orders/:id/tasks/:taskId/delay-reason', '\app\api\controller\Order@taskDelayReason');
+    Route::get('orders/:id/stage-history', '\app\api\controller\Order@stageHistory');
     Route::get('orders/:id/progress', '\app\api\controller\Order@progress');
     Route::post('orders/:id/cancel', '\app\api\controller\Order@cancel');
     Route::post('orders/:id/costs', '\app\api\controller\Order@addCost');
