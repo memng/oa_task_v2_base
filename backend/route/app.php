@@ -91,6 +91,9 @@ Route::group('api', function () {
     Route::get('chat/rooms/:roomId/messages/:messageId/readers', '\app\api\controller\Chat@messageReaders');
     Route::post('chat/rooms/:id/messages', '\app\api\controller\Chat@sendMessage');
     Route::post('chat/rooms/:id/read', '\app\api\controller\Chat@markRead');
+    Route::post('chat/rooms/:id/pin', '\app\api\controller\Chat@togglePin');
+    Route::post('chat/rooms/:id/mute', '\app\api\controller\Chat@toggleMute');
+    Route::post('chat/rooms/:id/clear-unread', '\app\api\controller\Chat@clearUnread');
     Route::post('chat/rooms', '\app\api\controller\Chat@create');
 
     Route::get('attendance/rules', '\app\api\controller\Attendance@rules');

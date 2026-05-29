@@ -24,6 +24,9 @@ class Chat extends ApiController
             'cm.room_id',
             'cm.role',
             'cm.last_read_message_id',
+            'cm.is_pinned',
+            'cm.is_muted',
+            'cm.pinned_at',
             'r.type as room_type',
             'r.name as room_name',
             'r.created_by',
@@ -86,12 +89,25 @@ class Chat extends ApiController
                 'name'        => $displayName,
                 'members'     => $members,
                 'last_message'=> $latest,
-                'unread'      => $unread,
+                'unread'      => $membership['is_muted'] ? 0 : $unread,
                 'last_at'     => $latest['created_at'] ?? null,
+                'is_pinned'   => (bool)$membership['is_pinned'],
+                'is_muted'    => (bool)$membership['is_muted'],
+                'pinned_at'   => $membership['pinned_at'],
             ];
         }
 
         usort($items, function ($a, $b) {
+            if ($a['is_pinned'] !== $b['is_pinned']) {
+                return $a['is_pinned'] ? -1 : 1;
+            }
+            if ($a['is_pinned'] && $b['is_pinned']) {
+                $pinnedA = $a['pinned_at'] ? strtotime($a['pinned_at']) : 0;
+                $pinnedB = $b['pinned_at'] ? strtotime($b['pinned_at']) : 0;
+                if ($pinnedA !== $pinnedB) {
+                    return $pinnedB <=> $pinnedA;
+                }
+            }
             $timeA = $a['last_at'] ? strtotime($a['last_at']) : 0;
             $timeB = $b['last_at'] ? strtotime($b['last_at']) : 0;
             return $timeB <=> $timeA;
@@ -468,5 +484,99 @@ class Chat extends ApiController
             ])
             ->find();
         return $record ?: null;
+    }
+
+    public function togglePin($id)
+    {
+        $roomId = (int)$id;
+        $userId = (int)$this->user()['id'];
+        $member = $this->ensureMembership($roomId, $userId);
+
+        $isPinned = (int)($member['is_pinned'] ?? 0);
+        $newValue = $isPinned ? 0 : 1;
+
+        $updateData = ['is_pinned' => $newValue];
+        if ($newValue) {
+            $updateData['pinned_at'] = date('Y-m-d H:i:s');
+        } else {
+            $updateData['pinned_at'] = null;
+        }
+
+        Db::table('chat_members')
+            ->where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->update($updateData);
+
+        $conversation = $this->getConversationInfo($roomId, $userId);
+
+        return $this->success([
+            'room_id' => $roomId,
+            'is_pinned' => $newValue ? true : false,
+            'pinned_at' => $conversation['pinned_at'],
+            'unread' => $conversation['unread'],
+        ], $newValue ? '已置顶' : '已取消置顶');
+    }
+
+    public function toggleMute($id)
+    {
+        $roomId = (int)$id;
+        $userId = (int)$this->user()['id'];
+        $this->ensureMembership($roomId, $userId);
+        $data = $this->requestData();
+        $isMuted = (int)($data['is_muted'] ?? 1);
+        $isMuted = $isMuted ? 1 : 0;
+
+        Db::table('chat_members')
+            ->where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->update(['is_muted' => $isMuted]);
+
+        $conversation = $this->getConversationInfo($roomId, $userId);
+
+        return $this->success([
+            'room_id' => $roomId,
+            'is_muted' => $isMuted ? true : false,
+            'unread' => $conversation['unread'],
+        ], $isMuted ? '已开启免打扰' : '已关闭免打扰');
+    }
+
+    public function clearUnread($id)
+    {
+        $roomId = (int)$id;
+        $userId = (int)$this->user()['id'];
+        $this->ensureMembership($roomId, $userId);
+
+        $messageId = (int)Db::table('chat_messages')
+            ->where('room_id', $roomId)
+            ->order('id', 'desc')
+            ->value('id');
+
+        if ($messageId > 0) {
+            Db::table('chat_members')
+                ->where('room_id', $roomId)
+                ->where('user_id', $userId)
+                ->update(['last_read_message_id' => $messageId]);
+        }
+
+        return $this->success(['room_id' => $roomId, 'unread' => 0], '未读已清零');
+    }
+
+    protected function getConversationInfo(int $roomId, int $userId): array
+    {
+        $member = Db::table('chat_members')
+            ->where('room_id', $roomId)
+            ->where('user_id', $userId)
+            ->field(['is_pinned', 'is_muted', 'pinned_at', 'last_read_message_id'])
+            ->find();
+
+        $lastReadId = (int)($member['last_read_message_id'] ?? 0);
+        $unread = $this->countUnreadMessages($roomId, $lastReadId);
+
+        return [
+            'is_pinned' => (bool)$member['is_pinned'],
+            'is_muted' => (bool)$member['is_muted'],
+            'pinned_at' => $member['pinned_at'],
+            'unread' => (bool)$member['is_muted'] ? 0 : $unread,
+        ];
     }
 }

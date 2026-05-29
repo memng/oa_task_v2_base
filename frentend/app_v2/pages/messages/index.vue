@@ -127,9 +127,13 @@
         <text class="link" @click="viewChatList">查看全部</text>
       </view>
       <view v-if="chatConversations.length" class="chat-list">
-        <view class="chat-item" v-for="item in chatConversations" :key="item.room_id" @click="openConversation(item)">
+        <view class="chat-item" v-for="item in chatConversations" :key="item.room_id" :class="{ pinned: item.is_pinned }" @click="openConversation(item)">
           <view class="chat-info">
-            <view class="chat-name">{{ item.name }}</view>
+            <view class="chat-name">
+              <text>{{ item.name }}</text>
+              <text v-if="item.is_pinned" class="pin-icon">📌</text>
+              <text v-if="item.is_muted" class="mute-icon">🔕</text>
+            </view>
             <view class="chat-desc">{{ item.last_message?.content || '暂无消息' }}</view>
           </view>
           <view class="chat-meta">
@@ -630,6 +634,9 @@ onShow(loadData)
   padding: 16rpx 0;
   border-bottom: 1rpx solid #f0f0f0;
 }
+.chat-item.pinned {
+  background: #fffbe6;
+}
 .chat-item:last-child {
   border-bottom: none;
 }
@@ -639,6 +646,12 @@ onShow(loadData)
 .chat-name {
   font-size: 28rpx;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+.pin-icon, .mute-icon {
+  font-size: 22rpx;
 }
 .chat-desc {
   font-size: 24rpx;

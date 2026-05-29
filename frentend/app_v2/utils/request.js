@@ -340,6 +340,15 @@ export const api = {
   chatMessageReaders(roomId, messageId) {
     return request({ url: `/chat/rooms/${roomId}/messages/${messageId}/readers` })
   },
+  chatPin(roomId) {
+    return request({ url: `/chat/rooms/${roomId}/pin`, method: 'POST' })
+  },
+  chatMute(roomId, payload = {}) {
+    return request({ url: `/chat/rooms/${roomId}/mute`, method: 'POST', data: payload })
+  },
+  chatClearUnread(roomId) {
+    return request({ url: `/chat/rooms/${roomId}/clear-unread`, method: 'POST' })
+  },
   intentOrders(params = {}) {
     return request({ url: '/intent-orders', data: params })
   },
