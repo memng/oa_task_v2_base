@@ -50,6 +50,7 @@ Route::group('api', function () {
     Route::post('tasks/:id/urge', '\app\api\controller\Task@urge');
     Route::post('tasks/:id/copy', '\app\api\controller\Task@copy');
     Route::post('tasks/:id/status', '\app\api\controller\Task@updateStatus');
+    Route::put('tasks/:id', '\app\api\controller\Task@update');
     Route::post('tasks/:id/follow', '\app\api\controller\Task@follow');
     Route::post('tasks/:id/unfollow', '\app\api\controller\Task@unfollow');
     Route::get('tasks/:id/follow-status', '\app\api\controller\Task@followStatus');
@@ -122,6 +123,8 @@ Route::group('api', function () {
 
     Route::get('voltages', '\app\api\controller\Voltage@index');
     Route::get('currencies', '\app\api\controller\Currency@index');
+    Route::get('tags', '\app\api\controller\Tag@index');
+    Route::get('tags/options', '\app\api\controller\Tag@options');
 
     Route::get('inventory', '\app\api\controller\Inventory@index');
     Route::post('inventory/:id/consume', '\app\api\controller\Inventory@consume');
@@ -187,5 +190,10 @@ Route::group('api', function () {
         Route::get('announcement-stats/:id', '\app\admin\controller\AnnouncementStats@detail');
 
         Route::get('order-board/summary', '\app\admin\controller\OrderBoard@summary');
+
+        Route::get('tags', '\app\admin\controller\Tag@index');
+        Route::post('tags', '\app\admin\controller\Tag@create');
+        Route::put('tags/:id', '\app\admin\controller\Tag@update');
+        Route::delete('tags/:id', '\app\admin\controller\Tag@delete');
     });
 });

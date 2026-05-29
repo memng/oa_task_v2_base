@@ -1,8 +1,16 @@
 <template>
   <view class="task-card" @click="emit('click')">
     <view class="task-header">
-      <text class="task-title">{{ task.title }}</text>
+      <view class="title-row">
+        <text class="priority-tag" :style="{ color: task.priority_color, borderColor: task.priority_color }">{{ task.priority_label }}</text>
+        <text class="task-title">{{ task.title }}</text>
+      </view>
       <text class="status" :class="task.status">{{ statusText }}</text>
+    </view>
+    <view class="tags-row" v-if="task.tags && task.tags.length > 0">
+      <view class="tag-item" v-for="tag in task.tags" :key="tag.key" :style="{ color: tag.color, borderColor: tag.color }">
+        {{ tag.label }}
+      </view>
     </view>
     <view class="meta">
       <text>{{ task.type_label }}</text>
@@ -42,11 +50,41 @@ const statusText = computed(() => statusMap[props.task.status] || '未知')
 .task-header {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 12rpx;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  flex: 1;
+  margin-right: 12rpx;
+}
+.priority-tag {
+  font-size: 20rpx;
+  padding: 2rpx 8rpx;
+  border: 1rpx solid;
+  border-radius: 6rpx;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 .task-title {
   font-size: 28rpx;
   font-weight: 600;
+  flex: 1;
+}
+.tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-bottom: 12rpx;
+}
+.tag-item {
+  font-size: 20rpx;
+  padding: 2rpx 8rpx;
+  border: 1rpx solid;
+  border-radius: 6rpx;
+  flex-shrink: 0;
 }
 .status {
   font-size: 24rpx;

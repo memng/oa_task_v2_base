@@ -11,6 +11,7 @@
           <el-menu-item index="/order-settings/tasks">任务分配</el-menu-item>
           <el-menu-item index="/order-settings/currencies">币种管理</el-menu-item>
           <el-menu-item index="/order-settings/voltages">电压管理</el-menu-item>
+          <el-menu-item index="/order-settings/tags">标签管理</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/announcements">公告</el-menu-item>
         <el-menu-item index="/announcement-stats">公告已读统计</el-menu-item>

@@ -21,6 +21,16 @@
         <el-form-item label="负责人ID">
           <el-input v-model="query.assigned_to" placeholder="输入用户ID" clearable />
         </el-form-item>
+        <el-form-item label="优先级">
+          <el-select v-model="query.priority" placeholder="全部" clearable>
+            <el-option v-for="item in priorityOptions" :key="item.value" :label="`${item.label} - ${item.name}`" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-select v-model="query.tag" placeholder="全部" clearable>
+            <el-option v-for="item in tagOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="创建时间">
           <el-date-picker
             v-model="dateRange"
@@ -60,6 +70,24 @@
         <el-table-column type="selection" width="55" />
         <el-table-column prop="title" label="任务" min-width="200" />
         <el-table-column prop="type_label" label="类型" width="140" />
+        <el-table-column label="优先级" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.priority_label" :style="{ color: row.priority_color, borderColor: row.priority_color, backgroundColor: row.priority_color + '15' }">
+              {{ row.priority_label }}
+            </el-tag>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="标签" min-width="200">
+          <template #default="{ row }">
+            <div v-if="row.tags && row.tags.length > 0" class="tags-container">
+              <el-tag v-for="tag in row.tags" :key="tag.key" :style="{ color: tag.color, borderColor: tag.color, backgroundColor: tag.color + '15' }" size="small" class="tag-item">
+                {{ tag.label }}
+              </el-tag>
+            </div>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="订单" width="160">
           <template #default="{ row }">
             <span v-if="row.pi_number">{{ row.pi_number }}</span>
@@ -87,9 +115,10 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewTask(row.id)">查看</el-button>
+            <el-button v-if="canEditTask(row)" type="warning" link @click="openEditDialog(row)">编辑</el-button>
             <el-button v-if="row.order_id" type="info" link @click="goOrder(row.order_id)">订单详情</el-button>
           </template>
         </el-table-column>
@@ -99,12 +128,27 @@
     <el-drawer v-model="detailDrawer" title="任务详情" size="30%">
       <div v-if="taskDetail">
         <div class="drawer-actions" v-if="taskDetail.task?.order?.id">
+          <el-button v-if="canEditTask(taskDetail.task)" type="warning" plain size="small" @click="openEditDialog(taskDetail.task)">编辑</el-button>
           <el-button type="primary" plain size="small" @click="goOrder(taskDetail.task.order.id)">订单详情</el-button>
         </div>
         <el-descriptions :column="1" border>
           <el-descriptions-item label="任务">{{ taskDetail.task.title }}</el-descriptions-item>
           <el-descriptions-item label="类型">{{ taskDetail.task.type_label }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ taskDetail.task.status_label }}</el-descriptions-item>
+          <el-descriptions-item label="优先级">
+            <el-tag v-if="taskDetail.task.priority_label" :style="{ color: taskDetail.task.priority_color, borderColor: taskDetail.task.priority_color, backgroundColor: taskDetail.task.priority_color + '15' }">
+              {{ taskDetail.task.priority_label }}
+            </el-tag>
+            <span v-else class="muted">-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="标签">
+            <div v-if="taskDetail.task.tags && taskDetail.task.tags.length > 0" class="tags-container">
+              <el-tag v-for="tag in taskDetail.task.tags" :key="tag.key" :style="{ color: tag.color, borderColor: tag.color, backgroundColor: tag.color + '15' }" size="small" class="tag-item">
+                {{ tag.label }}
+              </el-tag>
+            </div>
+            <span v-else class="muted">-</span>
+          </el-descriptions-item>
           <el-descriptions-item label="负责人">{{ taskDetail.task.assignee_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="截止时间">{{ taskDetail.task.due_at || '-' }}</el-descriptions-item>
           <el-descriptions-item label="描述">{{ taskDetail.task.description || '-' }}</el-descriptions-item>
@@ -135,6 +179,29 @@
         <el-button type="primary" :loading="batchLoading" @click="handleBatchAssign">确定指派</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="editDialogVisible" title="编辑优先级和标签" width="500px">
+      <el-form :model="editForm" label-width="100px">
+        <el-form-item label="优先级" required>
+          <el-radio-group v-model="editForm.priority">
+            <el-radio-button v-for="p in priorityOptions" :key="p.value" :value="p.value">
+              <span :style="{ color: p.color }">{{ p.label }}</span> {{ p.name }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-checkbox-group v-model="editForm.tags">
+            <el-checkbox v-for="tag in tagOptions" :key="tag.value" :value="tag.value" :style="{ '--tag-color': tag.color }">
+              <span :style="{ color: tag.color }">{{ tag.label }}</span>
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editingTask" @click="saveTaskEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -158,8 +225,42 @@ const query = reactive({
   status: '',
   created_by: '',
   assigned_to: '',
+  priority: '',
+  tag: '',
   created_from: '',
   created_to: ''
+})
+const priorityOptions = [
+  { value: 0, label: 'P0', name: '最高优先级', color: '#ff4d4f' },
+  { value: 1, label: 'P1', name: '高优先级', color: '#fa8c16' },
+  { value: 2, label: 'P2', name: '中优先级', color: '#faad14' },
+  { value: 3, label: 'P3', name: '低优先级', color: '#52c41a' }
+]
+const tagOptions = ref([
+  { value: 'urgent', label: '紧急', color: '#ff4d4f' },
+  { value: 'customer', label: '客户', color: '#1677ff' },
+  { value: 'internal', label: '内部', color: '#722ed1' }
+])
+const tagOptionsLoading = ref(false)
+const fetchTagOptions = async () => {
+  tagOptionsLoading.value = true
+  try {
+    const { data } = await api.tags()
+    if (data?.data?.items?.length > 0) {
+      tagOptions.value = data.data.items
+    }
+  } catch (err) {
+    console.error('Failed to fetch tag options:', err)
+  } finally {
+    tagOptionsLoading.value = false
+  }
+}
+const editDialogVisible = ref(false)
+const editingTaskId = ref(null)
+const editingTask = ref(false)
+const editForm = reactive({
+  priority: 3,
+  tags: []
 })
 const currentScope = ref('')
 const scopeOptions = [
@@ -416,6 +517,8 @@ const reset = () => {
   query.status = ''
   query.created_by = ''
   query.assigned_to = ''
+  query.priority = ''
+  query.tag = ''
   query.created_from = ''
   query.created_to = ''
   dateRange.value = []
@@ -452,7 +555,45 @@ const goOrder = (orderId) => {
   router.push(`/orders/${orderId}`)
 }
 
-onMounted(fetch)
+const canEditTask = (row) => {
+  if (!row) return false
+  if (row.status === 'completed' || row.status === 'cancelled') return false
+  return true
+}
+
+const openEditDialog = (row) => {
+  if (!row) return
+  editingTaskId.value = row.id
+  editForm.priority = row.priority ?? 3
+  editForm.tags = row.tags ? row.tags.map(t => t.key) : []
+  editDialogVisible.value = true
+}
+
+const saveTaskEdit = async () => {
+  if (!editingTaskId.value) return
+  editingTask.value = true
+  try {
+    await api.updateTask(editingTaskId.value, {
+      priority: editForm.priority,
+      tags: editForm.tags.length > 0 ? editForm.tags : null
+    })
+    ElMessage.success('已更新')
+    editDialogVisible.value = false
+    await fetch()
+    if (taskDetail.value?.task?.id === editingTaskId.value) {
+      await viewTask(editingTaskId.value)
+    }
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '更新失败')
+  } finally {
+    editingTask.value = false
+  }
+}
+
+onMounted(async () => {
+  await fetchTagOptions()
+  fetch()
+})
 </script>
 
 <style scoped>
@@ -489,5 +630,13 @@ onMounted(fetch)
 .drawer-actions {
   margin-bottom: 12px;
   text-align: right;
+}
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-item {
+  margin-right: 0 !important;
 }
 </style>

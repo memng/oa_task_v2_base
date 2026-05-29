@@ -16,6 +16,43 @@
       <button class="search-btn" size="mini" @click="fetchTasks">搜索</button>
     </view>
 
+    <view class="filter-toolbar">
+      <scroll-view scroll-x class="filter-scroll">
+        <view class="filter-group">
+          <text class="filter-label">优先级:</text>
+          <view
+            class="filter-chip"
+            :class="{ active: selectedPriority === null }"
+            @click="selectPriority(null)"
+          >全部</view>
+          <view
+            v-for="p in priorityOptions"
+            :key="p.value"
+            class="filter-chip"
+            :class="{ active: selectedPriority === p.value }"
+            :style="selectedPriority === p.value ? { color: p.color, borderColor: p.color, background: p.color + '15' } : {}"
+            @click="selectPriority(p.value)"
+          >{{ p.label }}</view>
+        </view>
+        <view class="filter-group">
+          <text class="filter-label">标签:</text>
+          <view
+            class="filter-chip"
+            :class="{ active: selectedTag === null }"
+            @click="selectTag(null)"
+          >全部</view>
+          <view
+            v-for="tag in tagOptions"
+            :key="tag.value"
+            class="filter-chip"
+            :class="{ active: selectedTag === tag.value }"
+            :style="selectedTag === tag.value ? { color: tag.color, borderColor: tag.color, background: tag.color + '15' } : {}"
+            @click="selectTag(tag.value)"
+          >{{ tag.label }}</view>
+        </view>
+      </scroll-view>
+    </view>
+
     <view v-if="!batchMode" class="normal-toolbar">
       <button class="batch-enter-btn" size="mini" @click="enterBatchMode">批量操作</button>
     </view>
@@ -44,10 +81,18 @@
         <view class="task-content" @tap="openTask(task)">
           <view class="task-head">
             <view class="task-head-left">
-              <view class="task-title">{{ task.title }}</view>
+              <view class="title-row">
+                <text class="priority-tag" :style="{ color: task.priority_color, borderColor: task.priority_color }">{{ task.priority_label }}</text>
+                <view class="task-title">{{ task.title }}</view>
+              </view>
               <view class="task-type">{{ task.type }}</view>
             </view>
             <view class="task-status" :class="task.status">{{ task.statusLabel }}</view>
+          </view>
+          <view class="task-tags" v-if="task.tags && task.tags.length > 0">
+            <view class="tag-item" v-for="tag in task.tags" :key="tag.key" :style="{ color: tag.color, borderColor: tag.color }">
+              {{ tag.label }}
+            </view>
           </view>
           <view class="task-body">
             <view class="task-desc">{{ task.desc }}</view>
@@ -160,6 +205,29 @@ const orderPi = ref('')
 const keyword = ref('')
 const tasks = ref([])
 const loading = ref(false)
+const selectedPriority = ref(null)
+const selectedTag = ref(null)
+const priorityOptions = [
+  { value: 0, label: 'P0', name: '最高', color: '#ff4d4f' },
+  { value: 1, label: 'P1', name: '高', color: '#fa8c16' },
+  { value: 2, label: 'P2', name: '中', color: '#faad14' },
+  { value: 3, label: 'P3', name: '低', color: '#52c41a' }
+]
+const tagOptions = ref([
+  { value: 'urgent', label: '紧急', color: '#ff4d4f' },
+  { value: 'customer', label: '客户', color: '#1677ff' },
+  { value: 'internal', label: '内部', color: '#722ed1' }
+])
+const fetchTagOptions = async () => {
+  try {
+    const res = await api.tagOptions()
+    if (res && res.items && res.items.length > 0) {
+      tagOptions.value = res.items
+    }
+  } catch (error) {
+    console.error('Failed to fetch tag options:', error)
+  }
+}
 
 const batchMode = ref(false)
 const selectedIds = ref([])
@@ -244,7 +312,10 @@ const formattedTasks = computed(() =>
     deadline: item.due_at || item.deadline,
     desc: item.description || item.requirement || '请按要求执行',
     orderPi: item.pi_number || item.order_pi || '',
-    customer: item.customer_name || ''
+    customer: item.customer_name || '',
+    priority_label: item.priority_label,
+    priority_color: item.priority_color,
+    tags: item.tags
   }))
 )
 
@@ -277,6 +348,12 @@ const buildParams = () => {
   }
   if (mode.value === 'temporary') {
     params.type = 'temporary'
+  }
+  if (selectedPriority.value !== null) {
+    params.priority = selectedPriority.value
+  }
+  if (selectedTag.value !== null) {
+    params.tag = selectedTag.value
   }
   return params
 }
@@ -483,6 +560,16 @@ const openOrder = (task) => {
   uni.navigateTo({ url: `/pages/order/detail?id=${task.orderId}` })
 }
 
+const selectPriority = (value) => {
+  selectedPriority.value = value
+  fetchTasks()
+}
+
+const selectTag = (value) => {
+  selectedTag.value = value
+  fetchTasks()
+}
+
 const handlePrimary = (task) => {
   openTask(task)
 }
@@ -496,6 +583,7 @@ onLoad((query) => {
   orderId.value = query.orderId || ''
   orderPi.value = query.pi ? decodeURIComponent(query.pi) : ''
   setupPage()
+  fetchTagOptions()
   fetchTasks()
 })
 </script>
@@ -540,6 +628,64 @@ onLoad((query) => {
   border-radius: 16rpx;
   border: none;
   padding: 0 30rpx;
+}
+.filter-toolbar {
+  margin-top: 20rpx;
+}
+.filter-scroll {
+  white-space: nowrap;
+}
+.filter-group {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 32rpx;
+}
+.filter-label {
+  font-size: 24rpx;
+  color: #666;
+  margin-right: 12rpx;
+  flex-shrink: 0;
+}
+.filter-chip {
+  display: inline-block;
+  padding: 10rpx 24rpx;
+  font-size: 24rpx;
+  color: #666;
+  background: #fff;
+  border: 1rpx solid #e8e8e8;
+  border-radius: 28rpx;
+  margin-right: 12rpx;
+}
+.filter-chip.active {
+  border: 1rpx solid #1677ff;
+  color: #1677ff;
+  background: #e6f4ff;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+.priority-tag {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border: 1rpx solid;
+  border-radius: 8rpx;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.task-tags {
+  margin-top: 12rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+.tag-item {
+  font-size: 22rpx;
+  padding: 6rpx 16rpx;
+  border: 1rpx solid;
+  border-radius: 20rpx;
+  background: #fff;
 }
 .normal-toolbar {
   margin-top: 20rpx;

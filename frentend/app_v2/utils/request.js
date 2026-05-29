@@ -259,6 +259,9 @@ export const api = {
   updateTaskStatus(id, payload) {
     return request({ url: `/tasks/${id}/status`, method: 'POST', data: payload })
   },
+  updateTask(id, payload) {
+    return request({ url: `/tasks/${id}`, method: 'PUT', data: payload })
+  },
   updateProcurementTask(id, payload) {
     return request({ url: `/tasks/${id}/procurement`, method: 'POST', data: payload })
   },
@@ -294,6 +297,9 @@ export const api = {
   },
   deleteTaskComment(commentId) {
     return request({ url: `/tasks/comments/${commentId}`, method: 'DELETE' })
+  },
+  tagOptions() {
+    return request({ url: '/tags' })
   },
   taskTemplates(params = {}) {
     return request({ url: '/task-templates', data: params })

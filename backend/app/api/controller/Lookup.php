@@ -16,6 +16,17 @@ class Lookup extends ApiController
                 'packaging', 'shipment', 'inspection', 'temporary', 'document',
             ],
             'task_status' => ['pending', 'in_progress', 'waiting_audit', 'rejected', 'completed', 'cancelled'],
+            'task_priorities' => [
+                ['value' => 0, 'label' => 'P0', 'name' => '最高优先级', 'color' => '#ff4d4f'],
+                ['value' => 1, 'label' => 'P1', 'name' => '高优先级', 'color' => '#fa8c16'],
+                ['value' => 2, 'label' => 'P2', 'name' => '中优先级', 'color' => '#faad14'],
+                ['value' => 3, 'label' => 'P3', 'name' => '低优先级', 'color' => '#52c41a'],
+            ],
+            'task_tags' => [
+                ['value' => 'urgent', 'label' => '紧急', 'color' => '#ff4d4f'],
+                ['value' => 'customer', 'label' => '客户', 'color' => '#1677ff'],
+                ['value' => 'internal', 'label' => '内部', 'color' => '#722ed1'],
+            ],
             'order_status'=> ['draft', 'in_progress', 'completed', 'cancelled'],
             'cost_scope'  => ['domestic', 'international', 'finance'],
             'cost_categories' => [

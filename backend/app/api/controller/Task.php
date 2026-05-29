@@ -66,6 +66,16 @@ class Task extends ApiController
         if ($dueTo = Request::get('due_to')) {
             $query->where('t.due_at', '<=', "{$dueTo} 23:59:59");
         }
+        $priority = Request::get('priority');
+        if ($priority !== null && $priority !== '') {
+            $priorityVal = (int)$priority;
+            if ($priorityVal >= 0 && $priorityVal <= 3) {
+                $query->where('t.priority', $priorityVal);
+            }
+        }
+        if ($tag = Request::get('tag')) {
+            $query->whereRaw('JSON_CONTAINS(t.tags, ?)', ['"' . $tag . '"']);
+        }
         if ($category = Request::get('category')) {
             switch ($category) {
                 case 'order':
@@ -98,6 +108,7 @@ class Task extends ApiController
         $this->applyVisibilityFilter($query, $user, $isAdminDept);
 
         $rows = $query->field(TaskService::getFullTaskFields())
+            ->order('t.priority', 'asc')
             ->order('t.due_at', 'asc')
             ->order('t.id', 'desc')
             ->select()
@@ -153,6 +164,8 @@ class Task extends ApiController
             'start_at'        => $data['start_at'] ?? null,
             'due_at'          => $data['due_at'] ?? null,
             'need_audit'      => $data['need_audit'] ?? 0,
+            'priority'        => $data['priority'] ?? 3,
+            'tags'            => $data['tags'] ?? null,
             'attachments'     => $data['attachments'] ?? [],
             'created_by'      => $user['id'],
             'payload'         => $data['payload'] ?? null,
@@ -179,6 +192,20 @@ class Task extends ApiController
         if (!empty($data['start_at'])) {
             $changes['start_at'] = $data['start_at'];
         }
+        if (isset($data['priority'])) {
+            $priority = (int)$data['priority'];
+            if ($priority >= 0 && $priority <= 3) {
+                $changes['priority'] = $priority;
+            }
+        }
+        if (isset($data['tags'])) {
+            if (is_array($data['tags'])) {
+                $tags = \app\common\service\TagService::validateTags($data['tags']);
+                $changes['tags'] = empty($tags) ? null : json_encode($tags, JSON_UNESCAPED_UNICODE);
+            } elseif ($data['tags'] === null || $data['tags'] === '') {
+                $changes['tags'] = null;
+            }
+        }
         if (!empty($data['comment'])) {
             Db::table('task_logs')->insert([
                 'task_id'    => $id,
@@ -196,6 +223,72 @@ class Task extends ApiController
         }
 
         return $this->success([], '任务状态已更新');
+    }
+
+    public function update($id)
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return $this->errorResponse('任务ID无效');
+        }
+
+        $task = Db::table('tasks')->where('id', $id)->find();
+        if (!$task) {
+            return $this->errorResponse('任务不存在');
+        }
+
+        $data = $this->requestData();
+        $changes = [];
+
+        if (isset($data['priority'])) {
+            $priority = (int)$data['priority'];
+            if ($priority >= 0 && $priority <= 3) {
+                $changes['priority'] = $priority;
+            }
+        }
+
+        if (isset($data['tags'])) {
+            if (is_array($data['tags'])) {
+                $tags = \app\common\service\TagService::validateTags($data['tags']);
+                $changes['tags'] = empty($tags) ? null : json_encode($tags, JSON_UNESCAPED_UNICODE);
+            } elseif ($data['tags'] === null || $data['tags'] === '') {
+                $changes['tags'] = null;
+            }
+        }
+
+        if (isset($data['title'])) {
+            $title = trim($data['title']);
+            if (!empty($title)) {
+                $changes['title'] = $title;
+            }
+        }
+
+        if (isset($data['description'])) {
+            $changes['description'] = $data['description'] ?? null;
+        }
+
+        if (isset($data['due_at'])) {
+            $changes['due_at'] = $data['due_at'] ?: null;
+        }
+
+        if (isset($data['start_at'])) {
+            $changes['start_at'] = $data['start_at'] ?: null;
+        }
+
+        if (isset($data['assigned_to'])) {
+            $assignedTo = $data['assigned_to'] ? (int)$data['assigned_to'] : null;
+            $changes['assigned_to'] = $assignedTo > 0 ? $assignedTo : null;
+        }
+
+        if (empty($changes)) {
+            return $this->errorResponse('没有需要更新的内容');
+        }
+
+        $changes['updated_at'] = date('Y-m-d H:i:s');
+
+        $this->taskService->updateTask($id, $changes, $this->user()['id']);
+
+        return $this->success([], '任务已更新');
     }
 
     public function updateProcurement($id)
@@ -578,9 +671,20 @@ class Task extends ApiController
                     ->whereOr('o.customer_name', 'like', "%{$keyword}%");
             });
         }
+        $priority = Request::get('priority');
+        if ($priority !== null && $priority !== '') {
+            $priorityVal = (int)$priority;
+            if ($priorityVal >= 0 && $priorityVal <= 3) {
+                $query->where('t.priority', $priorityVal);
+            }
+        }
+        if ($tag = Request::get('tag')) {
+            $query->whereRaw('JSON_CONTAINS(t.tags, ?)', ['"' . $tag . '"']);
+        }
 
         $total = (int)$query->count();
         $rows = $query->field(TaskService::getFullTaskFields())
+            ->order('t.priority', 'asc')
             ->order('tf.created_at', 'desc')
             ->order('t.id', 'desc')
             ->select()

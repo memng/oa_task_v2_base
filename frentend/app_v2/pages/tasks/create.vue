@@ -69,6 +69,37 @@
         <text>需要审核</text>
         <switch :checked="form.need_audit === 1" @change="onNeedAuditChange" />
       </view>
+      <view class="form-item">
+        <text>优先级</text>
+        <view class="priority-options">
+          <view
+            v-for="p in priorityOptions"
+            :key="p.value"
+            class="priority-option"
+            :class="{ active: form.priority === p.value }"
+            :style="form.priority === p.value ? { color: p.color, borderColor: p.color, background: p.color + '15' } : {}"
+            @click="selectPriority(p.value)"
+          >
+            <text class="priority-label">{{ p.label }}</text>
+            <text class="priority-name">{{ p.name }}</text>
+          </view>
+        </view>
+      </view>
+      <view class="form-item">
+        <text>标签</text>
+        <view class="tag-options">
+          <view
+            v-for="tag in tagOptions"
+            :key="tag.value"
+            class="tag-option"
+            :class="{ active: form.tags.includes(tag.value) }"
+            :style="form.tags.includes(tag.value) ? { color: tag.color, borderColor: tag.color, background: tag.color + '15' } : {}"
+            @click="toggleTag(tag.value)"
+          >
+            {{ tag.label }}
+          </view>
+        </view>
+      </view>
     </view>
     <view class="card">
       <view class="section-title">任务要求</view>
@@ -202,6 +233,31 @@ const types = [
   { label: '工厂订单', value: 'factory_order' },
   { label: '临时任务', value: 'temporary' }
 ]
+const priorityOptions = [
+  { value: 0, label: 'P0', name: '最高', color: '#ff4d4f' },
+  { value: 1, label: 'P1', name: '高', color: '#fa8c16' },
+  { value: 2, label: 'P2', name: '中', color: '#faad14' },
+  { value: 3, label: 'P3', name: '低', color: '#52c41a' }
+]
+const tagOptions = ref([
+  { value: 'urgent', label: '紧急', color: '#ff4d4f' },
+  { value: 'customer', label: '客户', color: '#1677ff' },
+  { value: 'internal', label: '内部', color: '#722ed1' }
+])
+const tagOptionsLoading = ref(false)
+const fetchTagOptions = async () => {
+  tagOptionsLoading.value = true
+  try {
+    const res = await api.tagOptions()
+    if (res && res.items && res.items.length > 0) {
+      tagOptions.value = res.items
+    }
+  } catch (error) {
+    console.error('Failed to fetch tag options:', error)
+  } finally {
+    tagOptionsLoading.value = false
+  }
+}
 const currentType = ref(types[0])
 const form = reactive({
   type: 'procurement',
@@ -210,6 +266,8 @@ const form = reactive({
   assigned_to: '',
   due_at: '',
   need_audit: 0,
+  priority: 3,
+  tags: [],
   description: ''
 })
 const orderInfo = ref(null)
@@ -279,7 +337,9 @@ const selectTemplate = (item) => {
     description: form.description,
     need_audit: form.need_audit,
     assigned_to: form.assigned_to,
-    assigneeName: assigneeName.value
+    assigneeName: assigneeName.value,
+    priority: form.priority,
+    tags: [...form.tags]
   })
   form.type = item.type || form.type
   const typeTarget = types.find((t) => t.value === form.type)
@@ -290,6 +350,8 @@ const selectTemplate = (item) => {
   form.description = item.description || ''
   form.need_audit = Number(item.need_audit || 0)
   form.assigned_to = item.assigned_to ? String(item.assigned_to) : ''
+  form.priority = item.priority != null ? Number(item.priority) : 3
+  form.tags = Array.isArray(item.tags) ? [...item.tags] : []
   assigneeName.value = ''
   appliedTemplateStack.value.push({ id: item.id, name: item.name })
   templateDialogVisible.value = false
@@ -310,6 +372,8 @@ const clearAppliedTemplate = () => {
     form.need_audit = snapshot.need_audit
     form.assigned_to = snapshot.assigned_to
     assigneeName.value = snapshot.assigneeName
+    form.priority = snapshot.priority
+    form.tags = snapshot.tags || []
   }
 }
 
@@ -370,7 +434,9 @@ const submitSaveTemplate = async () => {
       title: form.title,
       description: form.description,
       assigned_to: form.assigned_to ? Number(form.assigned_to) : null,
-      need_audit: form.need_audit
+      need_audit: form.need_audit,
+      priority: form.priority,
+      tags: form.tags.length > 0 ? form.tags : null
     })
     saveTemplateDialogVisible.value = false
     uni.showToast({ title: '模板已保存', icon: 'success' })
@@ -461,6 +527,19 @@ const onTypeChange = (e) => {
 
 const onNeedAuditChange = (event) => {
   form.need_audit = event.detail.value ? 1 : 0
+}
+
+const selectPriority = (value) => {
+  form.priority = value
+}
+
+const toggleTag = (value) => {
+  const index = form.tags.indexOf(value)
+  if (index > -1) {
+    form.tags.splice(index, 1)
+  } else {
+    form.tags.push(value)
+  }
 }
 
 const fetchOrders = async () => {
@@ -604,6 +683,8 @@ const submit = async () => {
       assigned_to: form.assigned_to ? Number(form.assigned_to) : null,
       due_at: form.due_at,
       need_audit: form.need_audit,
+      priority: form.priority,
+      tags: form.tags.length > 0 ? form.tags : null,
       description: form.description
     })
     uni.showToast({ title: '任务已创建', icon: 'success' })
@@ -623,6 +704,7 @@ onLoad((query) => {
     orderInfo.value = { pi: query.pi }
   }
   fetchOrders()
+  fetchTagOptions()
 })
 </script>
 
@@ -735,6 +817,51 @@ uni-datetime-picker {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.priority-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+.priority-option {
+  flex: 1;
+  min-width: 140rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  padding: 16rpx 12rpx;
+  border: 2rpx solid #e5e6eb;
+  border-radius: 12rpx;
+  background: #f7f8fa;
+}
+.priority-option.active {
+  border-width: 2rpx;
+  border-style: solid;
+}
+.priority-label {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+.priority-name {
+  font-size: 22rpx;
+  opacity: 0.8;
+}
+.tag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+.tag-option {
+  padding: 12rpx 24rpx;
+  border: 2rpx solid #e5e6eb;
+  border-radius: 40rpx;
+  background: #f7f8fa;
+  font-size: 26rpx;
+}
+.tag-option.active {
+  border-width: 2rpx;
+  border-style: solid;
 }
 .order-pill {
   padding: 12rpx 16rpx;

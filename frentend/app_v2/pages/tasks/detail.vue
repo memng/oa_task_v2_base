@@ -3,7 +3,10 @@
     <view class="card">
       <view class="heading">
         <view>
-          <view class="task-title">{{ task.title }}</view>
+          <view class="title-row">
+            <text class="priority-tag" :style="{ color: task.priority_color, borderColor: task.priority_color, background: task.priority_color + '15' }">{{ task.priority_label }}</text>
+            <view class="task-title">{{ task.title }}</view>
+          </view>
           <view class="task-sub">{{ task.type_label }} · {{ task.order?.pi_number || '无订单' }}</view>
         </view>
         <view class="heading-actions">
@@ -14,6 +17,11 @@
       <view class="chips">
         <text class="chip">负责人：{{ task.assignee_name || '待分配' }}</text>
         <text v-if="task.order?.customer_name" class="chip">客户：{{ task.order.customer_name }}</text>
+      </view>
+      <view class="tags-row" v-if="task.tags && task.tags.length > 0">
+        <view class="tag-item" v-for="tag in task.tags" :key="tag.key" :style="{ color: tag.color, borderColor: tag.color, background: tag.color + '15' }">
+          {{ tag.label }}
+        </view>
       </view>
       <view class="requirement">
         <view class="label">任务要求</view>
@@ -65,6 +73,7 @@
       </view>
       <view class="actions">
         <button class="outline" @click="openChat">沟通</button>
+        <button v-if="canEditTask" class="outline" @click="openEditDialog">编辑</button>
         <button v-if="canCopyTask" class="outline" :loading="copyingTask" @click="copyTask">复制任务</button>
         <button
           class="follow-btn"
@@ -441,6 +450,49 @@
       </view>
     </view>
   </view>
+
+  <view v-if="editDialogVisible" class="assign-mask" @click="editDialogVisible = false">
+    <view class="assign-dialog" @click.stop>
+      <view class="dialog-title">编辑优先级和标签</view>
+      <view class="dialog-section">
+        <view class="form-item">
+          <text>优先级</text>
+          <view class="priority-options">
+            <view
+              v-for="p in priorityOptions"
+              :key="p.value"
+              class="priority-option"
+              :class="{ active: editingPriority === p.value }"
+              :style="editingPriority === p.value ? { color: p.color, borderColor: p.color, background: p.color + '15' } : {}"
+              @click="selectEditPriority(p.value)"
+            >
+              <text class="priority-label">{{ p.label }}</text>
+              <text class="priority-name">{{ p.name }}</text>
+            </view>
+          </view>
+        </view>
+        <view class="form-item">
+          <text>标签</text>
+          <view class="tag-options">
+            <view
+              v-for="tag in tagOptions"
+              :key="tag.value"
+              class="tag-option"
+              :class="{ active: editingTags.includes(tag.value) }"
+              :style="editingTags.includes(tag.value) ? { color: tag.color, borderColor: tag.color, background: tag.color + '15' } : {}"
+              @click="toggleEditTag(tag.value)"
+            >
+              {{ tag.label }}
+            </view>
+          </view>
+        </view>
+      </view>
+      <view class="dialog-actions">
+        <button class="outline" @click="editDialogVisible = false">取消</button>
+        <button class="primary" :loading="updatingPriorityTag" @click="savePriorityAndTags">保存</button>
+      </view>
+    </view>
+  </view>
 </template>
 
 <script setup>
@@ -586,6 +638,40 @@ const canCopyTask = computed(() => {
   if (Number(task.value.assigned_to) === userId) return true
   return false
 })
+const canEditTask = computed(() => {
+  if (!task.value || !profile.value?.id) return false
+  if (task.value.status === 'completed' || task.value.status === 'cancelled') return false
+  const userId = Number(profile.value.id)
+  if (isAdminDept.value) return true
+  if (Number(task.value.created_by) === userId) return true
+  if (Number(task.value.assigned_to) === userId) return true
+  return false
+})
+const editDialogVisible = ref(false)
+const editingPriority = ref(3)
+const editingTags = ref([])
+const updatingPriorityTag = ref(false)
+const priorityOptions = [
+  { value: 0, label: 'P0', name: '最高', color: '#ff4d4f' },
+  { value: 1, label: 'P1', name: '高', color: '#fa8c16' },
+  { value: 2, label: 'P2', name: '中', color: '#faad14' },
+  { value: 3, label: 'P3', name: '低', color: '#52c41a' }
+]
+const tagOptions = ref([
+  { value: 'urgent', label: '紧急', color: '#ff4d4f' },
+  { value: 'customer', label: '客户', color: '#1677ff' },
+  { value: 'internal', label: '内部', color: '#722ed1' }
+])
+const fetchTagOptions = async () => {
+  try {
+    const res = await api.tagOptions()
+    if (res && res.items && res.items.length > 0) {
+      tagOptions.value = res.items
+    }
+  } catch (error) {
+    console.error('Failed to fetch tag options:', error)
+  }
+}
 const normalizeModuleKey = (label = '', index = 0) => {
   const key = String(label || '')
     .toLowerCase()
@@ -1391,6 +1477,45 @@ const openOrderDetail = () => {
   uni.navigateTo({ url: `/pages/order/detail?id=${task.value.order.id}` })
 }
 
+const openEditDialog = () => {
+  if (!task.value) return
+  editingPriority.value = task.value.priority ?? 3
+  editingTags.value = task.value.tags ? task.value.tags.map(t => t.key) : []
+  editDialogVisible.value = true
+}
+
+const selectEditPriority = (value) => {
+  editingPriority.value = value
+}
+
+const toggleEditTag = (value) => {
+  const index = editingTags.value.indexOf(value)
+  if (index > -1) {
+    editingTags.value.splice(index, 1)
+  } else {
+    editingTags.value.push(value)
+  }
+}
+
+const savePriorityAndTags = async () => {
+  if (!task.value?.id) return
+  updatingPriorityTag.value = true
+  try {
+    await api.updateTask(task.value.id, {
+      priority: editingPriority.value,
+      tags: editingTags.value.length > 0 ? editingTags.value : null
+    })
+    uni.showToast({ title: '已更新', icon: 'success' })
+    editDialogVisible.value = false
+    await fetchTaskDetail(task.value.id)
+  } catch (error) {
+    console.error(error)
+    uni.showToast({ title: '更新失败', icon: 'none' })
+  } finally {
+    updatingPriorityTag.value = false
+  }
+}
+
 const urgeTask = async () => {
   if (!task.value?.id || urgingTask.value) return
   urgingTask.value = true
@@ -1864,7 +1989,7 @@ watch(taskId, (val) => {
 onLoad(async (query) => {
   if (!query?.id) return
   taskId.value = Number(query.id)
-  await Promise.all([fetchTaskDetail(taskId.value), fetchSuppliers(), fetchStaff()])
+  await Promise.all([fetchTaskDetail(taskId.value), fetchSuppliers(), fetchStaff(), fetchTagOptions()])
   fetchComments(1)
 })
 </script>
@@ -1898,9 +2023,24 @@ onLoad(async (query) => {
   border-radius: 14rpx;
   font-size: 22rpx;
 }
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 8rpx;
+}
+.priority-tag {
+  font-size: 22rpx;
+  padding: 4rpx 12rpx;
+  border: 1rpx solid;
+  border-radius: 8rpx;
+  font-weight: 600;
+  flex-shrink: 0;
+}
 .task-title {
   font-size: 34rpx;
   font-weight: 600;
+  flex: 1;
 }
 .task-sub {
   color: #8c8c8c;
@@ -1928,6 +2068,19 @@ onLoad(async (query) => {
   background: #f0f5ff;
   color: #1677ff;
   font-size: 22rpx;
+}
+.tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-bottom: 16rpx;
+}
+.tag-item {
+  font-size: 22rpx;
+  padding: 4rpx 12rpx;
+  border: 1rpx solid;
+  border-radius: 8rpx;
+  flex-shrink: 0;
 }
 .requirement .label {
   font-size: 26rpx;

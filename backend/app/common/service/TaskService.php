@@ -25,9 +25,17 @@ class TaskService
         't.status',
         't.need_audit',
         't.priority',
+        't.tags',
         't.payload',
         't.created_at',
         't.updated_at',
+    ];
+
+    public const PRIORITY_OPTIONS = [
+        0 => ['label' => 'P0', 'name' => '最高优先级', 'color' => '#ff4d4f'],
+        1 => ['label' => 'P1', 'name' => '高优先级', 'color' => '#fa8c16'],
+        2 => ['label' => 'P2', 'name' => '中优先级', 'color' => '#faad14'],
+        3 => ['label' => 'P3', 'name' => '低优先级', 'color' => '#52c41a'],
     ];
 
     public const TASK_JOIN_FIELDS = [
@@ -68,6 +76,19 @@ class TaskService
     public function createTask(array $data, array $extra = []): int
     {
         $now = date('Y-m-d H:i:s');
+        $priority = isset($data['priority']) ? (int)$data['priority'] : 3;
+        if ($priority < 0 || $priority > 3) {
+            $priority = 3;
+        }
+        $tags = $data['tags'] ?? null;
+        if (is_array($tags) && !empty($tags)) {
+            $tags = TagService::validateTags($tags);
+            if (empty($tags)) {
+                $tags = null;
+            }
+        } else {
+            $tags = null;
+        }
         $taskId = Db::table('tasks')->insertGetId([
             'order_id'        => $data['order_id'] ?? null,
             'order_product_id'=> $data['order_product_id'] ?? null,
@@ -81,7 +102,8 @@ class TaskService
             'due_at'          => $data['due_at'] ?? null,
             'status'          => $data['status'] ?? 'pending',
             'need_audit'      => $data['need_audit'] ?? 0,
-            'priority'        => $data['priority'] ?? 3,
+            'priority'        => $priority,
+            'tags'            => $tags ? json_encode($tags, JSON_UNESCAPED_UNICODE) : null,
             'payload'         => isset($data['payload']) ? json_encode($data['payload'], JSON_UNESCAPED_UNICODE) : null,
             'created_at'      => $data['created_at'] ?? $now,
             'updated_at'      => $data['updated_at'] ?? $now,
@@ -454,6 +476,12 @@ class TaskService
             $orderId = isset($row['order_id']) ? (int)$row['order_id'] : null;
             $orderProductId = isset($row['order_product_id']) ? (int)$row['order_product_id'] : null;
             $parentTaskId = isset($row['parent_task_id']) ? (int)$row['parent_task_id'] : null;
+            $priorityValue = (int)($row['priority'] ?? 3);
+            $priorityOption = self::PRIORITY_OPTIONS[$priorityValue] ?? self::PRIORITY_OPTIONS[3];
+
+            $tags = TagService::formatTags($row['tags'] ?? null);
+            $tagsLabels = array_column($tags, 'label');
+
             $task = [
                 'id'                => (int)$row['id'],
                 'order_id'          => $orderId,
@@ -475,7 +503,12 @@ class TaskService
                 'delay_reason_updated_by_name' => $row['delay_reason_updated_by_name'] ?? null,
                 'status'                    => $row['status'],
                 'need_audit'        => (int)($row['need_audit'] ?? 0),
-                'priority'          => (int)($row['priority'] ?? 3),
+                'priority'          => $priorityValue,
+                'priority_label'    => $priorityOption['label'],
+                'priority_name'     => $priorityOption['name'],
+                'priority_color'    => $priorityOption['color'],
+                'tags'              => $tags,
+                'tags_labels'       => $tagsLabels,
                 'payload'           => $payload,
                 'status_label'      => $statusMap[$row['status']] ?? $row['status'],
                 'type_label'        => $typeMap[$row['type']] ?? $row['type'],
@@ -642,6 +675,7 @@ class TaskService
                 'status'           => 'pending',
                 'need_audit'       => $source['need_audit'],
                 'priority'         => $source['priority'],
+                'tags'             => $source['tags'],
                 'payload'          => $source['payload'],
                 'created_at'       => $now,
                 'updated_at'       => $now,

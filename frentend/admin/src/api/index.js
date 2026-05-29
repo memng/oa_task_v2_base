@@ -69,6 +69,27 @@ export const api = {
   createTask(data) {
     return client.post('/tasks', data)
   },
+  updateTaskStatus(id, data) {
+    return client.post(`/tasks/${id}/status`, data)
+  },
+  updateTask(id, data) {
+    return client.put(`/tasks/${id}`, data)
+  },
+  tags() {
+    return client.get('/tags')
+  },
+  adminTags() {
+    return client.get('/admin/tags')
+  },
+  createTag(data) {
+    return client.post('/admin/tags', data)
+  },
+  updateTag(id, data) {
+    return client.put(`/admin/tags/${id}`, data)
+  },
+  deleteTag(id) {
+    return client.delete(`/admin/tags/${id}`)
+  },
   batchAssignTasks(data) {
     return client.post('/tasks/batch/assign', data)
   },
