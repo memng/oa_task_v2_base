@@ -30,6 +30,8 @@ class Upload extends ApiController
             'media_id'     => $mediaId,
             'url'          => $url,
             'file_name'    => $file->getOriginalName(),
+            'file_type'    => $this->detectType($file->getMime()),
+            'file_size'    => $file->getSize(),
             'storage_path' => $path,
         ], '上传成功', 201);
     }
@@ -81,6 +83,8 @@ class Upload extends ApiController
             'media_id'     => $mediaId,
             'url'          => $url,
             'file_name'    => $originalName,
+            'file_type'    => $this->detectType($fileMime),
+            'file_size'    => $fileSize,
             'storage_path' => $path,
         ], '上传成功', 201);
     }
@@ -96,7 +100,24 @@ class Upload extends ApiController
         if (str_contains($mime, 'audio')) {
             return 'audio';
         }
-        if (str_contains($mime, 'pdf') || str_contains($mime, 'msword')) {
+        if (
+            str_contains($mime, 'pdf') ||
+            str_contains($mime, 'msword') ||
+            str_contains($mime, 'officedocument') ||
+            str_contains($mime, 'spreadsheet') ||
+            str_contains($mime, 'presentation') ||
+            str_contains($mime, 'wordprocessingml')
+        ) {
+            return 'document';
+        }
+        if (
+            str_contains($mime, 'zip') ||
+            str_contains($mime, 'rar') ||
+            str_contains($mime, '7z') ||
+            str_contains($mime, 'x-tar') ||
+            str_contains($mime, 'gzip') ||
+            str_contains($mime, 'compressed')
+        ) {
             return 'document';
         }
         return 'other';

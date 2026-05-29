@@ -280,6 +280,15 @@ export const api = {
   followedTasks(params = {}) {
     return request({ url: '/tasks/followed', data: params })
   },
+  taskComments(taskId, params = {}) {
+    return request({ url: `/tasks/${taskId}/comments`, data: params })
+  },
+  createTaskComment(taskId, payload) {
+    return request({ url: `/tasks/${taskId}/comments`, method: 'POST', data: payload })
+  },
+  deleteTaskComment(commentId) {
+    return request({ url: `/tasks/comments/${commentId}`, method: 'DELETE' })
+  },
   taskTemplates(params = {}) {
     return request({ url: '/task-templates', data: params })
   },

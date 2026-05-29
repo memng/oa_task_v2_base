@@ -54,6 +54,9 @@ Route::group('api', function () {
     Route::post('tasks/:id/unfollow', '\app\api\controller\Task@unfollow');
     Route::get('tasks/:id/follow-status', '\app\api\controller\Task@followStatus');
     Route::get('tasks/followed', '\app\api\controller\Task@followedTasks');
+    Route::get('tasks/:id/comments', '\app\api\controller\Task@comments');
+    Route::post('tasks/:id/comments', '\app\api\controller\Task@createComment');
+    Route::delete('tasks/comments/:id', '\app\api\controller\Task@deleteComment');
     Route::get('tasks/:id', '\app\api\controller\Task@read');
     Route::get('tasks', '\app\api\controller\Task@index');
     Route::post('tasks', '\app\api\controller\Task@save');

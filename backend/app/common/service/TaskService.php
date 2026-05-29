@@ -826,4 +826,309 @@ class TaskService
                 break;
         }
     }
+
+    public function createComment(int $taskId, int $userId, string $content, array $attachmentIds = [], ?int $replyTo = null): array
+    {
+        $now = date('Y-m-d H:i:s');
+        
+        $mentionUserIds = $this->parseMentions($content);
+        
+        Db::startTrans();
+        try {
+            $commentId = Db::table('task_comments')->insertGetId([
+                'task_id'    => $taskId,
+                'user_id'    => $userId,
+                'content'    => $content,
+                'mentions'   => !empty($mentionUserIds) ? json_encode($mentionUserIds) : null,
+                'reply_to'   => $replyTo,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            if (!empty($attachmentIds)) {
+                $rows = [];
+                foreach ($attachmentIds as $mediaId) {
+                    $rows[] = [
+                        'comment_id' => $commentId,
+                        'media_id'   => (int)$mediaId,
+                        'created_at' => $now,
+                    ];
+                }
+                Db::table('task_comment_attachments')->insertAll($rows);
+            }
+
+            $this->addLog($taskId, $userId, 'comment', mb_substr($content, 0, 100));
+
+            Db::commit();
+        } catch (\Exception $e) {
+            Db::rollback();
+            throw $e;
+        }
+
+        $task = Db::table('tasks')->where('id', $taskId)->find();
+        if ($task) {
+            $this->notifyCommentMentionedUsers($commentId, $task, $userId, $content, $mentionUserIds);
+            $this->notifyCommentToFollowers($commentId, $task, $userId, $content);
+        }
+
+        return $this->getCommentById($commentId);
+    }
+
+    protected function parseMentions(string $content): array
+    {
+        $userIds = [];
+        if (preg_match_all('/@\[(\d+)\]/', $content, $matches)) {
+            if (!empty($matches[1])) {
+                $userIds = array_map('intval', $matches[1]);
+                $userIds = array_unique($userIds);
+            }
+        }
+        return $userIds;
+    }
+
+    protected function notifyCommentMentionedUsers(int $commentId, array $task, int $commenterId, string $content, array $mentionUserIds): void
+    {
+        if (empty($mentionUserIds)) {
+            return;
+        }
+
+        $commenter = Db::table('users')->where('id', $commenterId)->find();
+        $commenterName = $commenter['name'] ?? '某人';
+
+        $targets = array_filter($mentionUserIds, function ($uid) use ($commenterId) {
+            return $uid > 0 && $uid !== $commenterId;
+        });
+
+        if (empty($targets)) {
+            return;
+        }
+
+        $plainContent = preg_replace('/@\[\d+\]\(([^)]+)\)/', '@$1', $content);
+        $plainContent = preg_replace('/@\[(\d+)\]/', '', $plainContent);
+        $plainContent = trim($plainContent);
+        $contentPreview = mb_substr($plainContent, 0, 50);
+
+        $this->notificationService->batchCreateNotifications($targets, [
+            'channel' => NotificationService::CHANNEL_SYSTEM,
+            'template_code' => 'task_comment_mentioned',
+            'title' => '任务评论提及',
+            'content' => sprintf('%s在任务「%s」中@了你：%s', $commenterName, $task['title'], $contentPreview),
+            'payload' => [
+                'type' => 'task_comment_mentioned',
+                'task_id' => $task['id'],
+                'task_title' => $task['title'],
+                'comment_id' => $commentId,
+                'commenter_id' => $commenterId,
+                'commenter_name' => $commenterName,
+            ],
+        ]);
+    }
+
+    protected function notifyCommentToFollowers(int $commentId, array $task, int $commenterId, string $content): void
+    {
+        $followerIds = Db::table('task_followers')
+            ->where('task_id', $task['id'])
+            ->column('user_id');
+
+        if (empty($followerIds)) {
+            return;
+        }
+
+        $targets = array_filter($followerIds, function ($uid) use ($commenterId) {
+            return (int)$uid > 0 && (int)$uid !== $commenterId;
+        });
+
+        if (empty($targets)) {
+            return;
+        }
+
+        $commenter = Db::table('users')->where('id', $commenterId)->find();
+        $commenterName = $commenter['name'] ?? '某人';
+
+        $plainContent = preg_replace('/@\[\d+\]\(([^)]+)\)/', '@$1', $content);
+        $plainContent = preg_replace('/@\[(\d+)\]/', '', $plainContent);
+        $plainContent = trim($plainContent);
+        $contentPreview = mb_substr($plainContent, 0, 50);
+
+        $this->notificationService->batchCreateNotifications($targets, [
+            'channel' => NotificationService::CHANNEL_SYSTEM,
+            'template_code' => 'task_comment',
+            'title' => '任务新评论',
+            'content' => sprintf('%s评论了任务「%s」：%s', $commenterName, $task['title'], $contentPreview),
+            'payload' => [
+                'type' => 'task_comment',
+                'task_id' => $task['id'],
+                'task_title' => $task['title'],
+                'comment_id' => $commentId,
+                'commenter_id' => $commenterId,
+                'commenter_name' => $commenterName,
+            ],
+        ]);
+    }
+
+    public function getCommentById(int $commentId): array
+    {
+        $comment = Db::table('task_comments')
+            ->alias('tc')
+            ->leftJoin('users u', 'u.id = tc.user_id')
+            ->where('tc.id', $commentId)
+            ->field([
+                'tc.id',
+                'tc.task_id',
+                'tc.user_id',
+                'tc.content',
+                'tc.mentions',
+                'tc.reply_to',
+                'tc.created_at',
+                'tc.updated_at',
+                'u.name as user_name',
+                'u.avatar as user_avatar',
+            ])
+            ->find();
+
+        if (!$comment) {
+            return [];
+        }
+
+        if (!empty($comment['mentions'])) {
+            $decoded = json_decode($comment['mentions'], true);
+            $comment['mentions'] = is_array($decoded) ? $decoded : [];
+        } else {
+            $comment['mentions'] = [];
+        }
+
+        $attachments = Db::table('task_comment_attachments')
+            ->alias('tca')
+            ->leftJoin('media_assets ma', 'ma.id = tca.media_id')
+            ->where('tca.comment_id', $commentId)
+            ->field([
+                'tca.id',
+                'tca.media_id',
+                'ma.file_name',
+                'ma.file_type',
+                'ma.storage_path',
+                'ma.file_size',
+            ])
+            ->select()
+            ->toArray();
+
+        $comment['attachments'] = array_map(static function ($row) {
+            $url = null;
+            if (!empty($row['storage_path'])) {
+                $path = ltrim($row['storage_path'], '/');
+                $url = '/storage/' . $path;
+            }
+            return [
+                'id'         => (int)$row['id'],
+                'media_id'   => (int)$row['media_id'],
+                'file_name'  => $row['file_name'],
+                'file_type'  => $row['file_type'],
+                'file_size'  => (int)$row['file_size'],
+                'url'        => $url,
+            ];
+        }, $attachments);
+
+        return $comment;
+    }
+
+    public function getTaskComments(int $taskId, int $page = 1, int $pageSize = 20): array
+    {
+        $query = Db::table('task_comments')
+            ->alias('tc')
+            ->leftJoin('users u', 'u.id = tc.user_id')
+            ->where('tc.task_id', $taskId);
+
+        $total = (int)$query->count();
+
+        $rows = $query
+            ->field([
+                'tc.id',
+                'tc.task_id',
+                'tc.user_id',
+                'tc.content',
+                'tc.mentions',
+                'tc.reply_to',
+                'tc.created_at',
+                'tc.updated_at',
+                'u.name as user_name',
+                'u.avatar as user_avatar',
+            ])
+            ->order('tc.id', 'desc')
+            ->page($page, $pageSize)
+            ->select()
+            ->toArray();
+
+        $commentIds = array_column($rows, 'id');
+        $attachmentsMap = [];
+        if (!empty($commentIds)) {
+            $attachments = Db::table('task_comment_attachments')
+                ->alias('tca')
+                ->leftJoin('media_assets ma', 'ma.id = tca.media_id')
+                ->whereIn('tca.comment_id', $commentIds)
+                ->field([
+                    'tca.comment_id',
+                    'tca.id',
+                    'tca.media_id',
+                    'ma.file_name',
+                    'ma.file_type',
+                    'ma.storage_path',
+                    'ma.file_size',
+                ])
+                ->select()
+                ->toArray();
+
+            foreach ($attachments as $att) {
+                $cid = (int)$att['comment_id'];
+                if (!isset($attachmentsMap[$cid])) {
+                    $attachmentsMap[$cid] = [];
+                }
+                $url = null;
+                if (!empty($att['storage_path'])) {
+                    $path = ltrim($att['storage_path'], '/');
+                    $url = '/storage/' . $path;
+                }
+                $attachmentsMap[$cid][] = [
+                    'id'         => (int)$att['id'],
+                    'media_id'   => (int)$att['media_id'],
+                    'file_name'  => $att['file_name'],
+                    'file_type'  => $att['file_type'],
+                    'file_size'  => (int)$att['file_size'],
+                    'url'        => $url,
+                ];
+            }
+        }
+
+        $comments = array_map(function ($row) use ($attachmentsMap) {
+            if (!empty($row['mentions'])) {
+                $decoded = json_decode($row['mentions'], true);
+                $row['mentions'] = is_array($decoded) ? $decoded : [];
+            } else {
+                $row['mentions'] = [];
+            }
+            $row['attachments'] = $attachmentsMap[(int)$row['id']] ?? [];
+            return $row;
+        }, $rows);
+
+        return [
+            'items' => $comments,
+            'total' => $total,
+            'page' => $page,
+            'page_size' => $pageSize,
+        ];
+    }
+
+    public function deleteComment(int $commentId, int $operatorId): bool
+    {
+        $comment = Db::table('task_comments')->where('id', $commentId)->find();
+        if (!$comment) {
+            return false;
+        }
+
+        if ((int)$comment['user_id'] !== $operatorId && !\user_belongs_to_admin_dept(Db::table('users')->where('id', $operatorId)->find())) {
+            throw new \Exception('无权删除该评论');
+        }
+
+        Db::table('task_comments')->where('id', $commentId)->delete();
+        return true;
+    }
 }

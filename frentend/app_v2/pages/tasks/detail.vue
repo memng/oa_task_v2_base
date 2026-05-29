@@ -282,8 +282,125 @@
       </view>
       <view v-else class="empty">暂无记录</view>
     </view>
+
+    <view class="card">
+      <view class="section-title">评论区 ({{ commentTotal }})</view>
+      <view v-if="comments.length" class="comments">
+        <view v-for="comment in comments" :key="comment.id" class="comment-item">
+          <view class="comment-header">
+            <view class="comment-avatar">{{ comment.user_name?.charAt(0) || 'U' }}</view>
+            <view class="comment-meta">
+              <view class="comment-user">{{ comment.user_name || '用户' }}</view>
+              <view class="comment-time">{{ comment.created_at }}</view>
+            </view>
+            <view class="comment-actions">
+              <text class="reply-btn" @click="replyToComment(comment)">回复</text>
+              <text v-if="canDeleteComment(comment)" class="delete-btn" @click="deleteComment(comment)">删除</text>
+            </view>
+          </view>
+          <view class="comment-content">
+            <rich-text :nodes="renderCommentContent(comment.content)"></rich-text>
+          </view>
+          <view v-if="comment.attachments?.length" class="comment-attachments">
+            <view
+              v-for="att in comment.attachments"
+              :key="att.id"
+              class="comment-attachment"
+              @click="previewAttachment(att)"
+            >
+              <image v-if="att.file_type === 'image'" :src="att.url" mode="aspectFill" class="att-thumb" />
+              <view v-else-if="att.file_type === 'video'" class="file-icon video-icon">
+                <text class="file-ext">视频</text>
+              </view>
+              <view v-else class="file-icon doc-icon">
+                <text class="file-ext">{{ getFileExt(att.file_name) }}</text>
+              </view>
+              <view class="att-name">{{ att.file_name || '附件' }}</view>
+            </view>
+          </view>
+        </view>
+      </view>
+      <view v-else class="empty">暂无评论，来说点什么吧~</view>
+      <view v-if="hasMoreComments" class="load-more">
+        <button class="outline small-btn" :loading="loadingComments" @click="loadMoreComments">加载更多</button>
+      </view>
+    </view>
   </scroll-view>
-  <view v-else class="empty">暂无任务数据</view>
+
+  <view class="comment-input-bar">
+    <view class="input-row">
+      <view class="input-actions">
+        <button class="icon-btn" @click="chooseCommentImage" :loading="uploadingCommentAttachment">
+          <text class="btn-icon">🖼️</text>
+        </button>
+        <button class="icon-btn" @click="chooseCommentFile" :loading="uploadingCommentAttachment">
+          <text class="btn-icon">📎</text>
+        </button>
+        <button class="icon-btn" @click="openMentionPicker">
+          <text class="btn-icon">@</text>
+        </button>
+      </view>
+      <textarea
+        class="comment-input"
+        v-model="commentContent"
+        :placeholder="replyToCommentId ? '回复评论...' : '写评论...'"
+        :adjust-position="true"
+        @confirm="submitComment"
+      ></textarea>
+      <button class="send-btn" :disabled="!canSubmitComment" :loading="submittingComment" @click="submitComment">
+        发送
+      </button>
+    </view>
+    <view v-if="commentAttachments.length" class="pending-comment-attachments">
+      <view v-for="(att, index) in commentAttachments" :key="index" class="pending-att-item">
+        <image v-if="att.file_type === 'image'" :src="att.url" mode="aspectFill" class="att-thumb" />
+        <view v-else class="pending-file-chip">
+          <text class="pending-file-ext">{{ getFileExt(att.file_name) }}</text>
+          <text class="pending-file-name">{{ att.file_name || '附件' }}</text>
+        </view>
+        <text class="remove" @click="removeCommentAttachment(index)">✕</text>
+      </view>
+    </view>
+  </view>
+
+  <view v-if="mentionPickerVisible" class="assign-mask">
+    <view class="assign-dialog">
+      <view class="dialog-title">选择要@的成员</view>
+      <view class="dialog-section">
+        <input
+          class="dialog-search"
+          v-model.trim="mentionKeyword"
+          placeholder="搜索成员"
+          @confirm="searchMentionUsers"
+        />
+        <scroll-view scroll-y class="dialog-scroll">
+          <view v-if="loadingMentionUsers" class="loading">加载中...</view>
+          <view v-else>
+            <view
+              v-for="user in mentionUserList"
+              :key="user.id"
+              class="list-row"
+              @click="selectMentionUser(user)"
+            >
+              <view class="row-title">{{ user.name }}</view>
+              <view class="row-desc">{{ user.dept_name || '' }}</view>
+            </view>
+            <view v-if="!mentionUserList.length" class="empty">暂无成员</view>
+          </view>
+        </scroll-view>
+      </view>
+      <view class="dialog-actions">
+        <button class="outline" @click="mentionPickerVisible = false">取消</button>
+      </view>
+    </view>
+  </view>
+
+  <view v-if="videoPreviewUrl" class="assign-mask" @click="closeVideoPreview">
+    <view class="video-preview-box" @click.stop>
+      <video :src="videoPreviewUrl" controls autoplay class="video-preview-player"></video>
+      <view class="video-close" @click="closeVideoPreview">✕</view>
+    </view>
+  </view>
 
   <view v-if="inventoryDialogVisible" class="assign-mask">
     <view class="assign-dialog large">
@@ -1265,12 +1382,6 @@ watch(availableTaskStatusOptions, () => {
   syncStatusIndexes()
 })
 
-onLoad(async (query) => {
-  if (!query?.id) return
-  taskId.value = Number(query.id)
-  await Promise.all([fetchTaskDetail(taskId.value), fetchSuppliers(), fetchStaff()])
-})
-
 const openChat = () => {
   uni.navigateTo({ url: '/pages/messages/group' })
 }
@@ -1344,11 +1455,424 @@ const toggleFollow = async () => {
     togglingFollow.value = false
   }
 }
+
+const comments = ref([])
+const commentTotal = ref(0)
+const commentPage = ref(1)
+const hasMoreComments = ref(false)
+const loadingComments = ref(false)
+const commentContent = ref('')
+const ZW_0 = '\u200B'
+const ZW_1 = '\u200C'
+const ZW_WRAP = '\u200D'
+
+const idToZw = (id) => {
+  const bin = (id >>> 0).toString(2).padStart(32, '0')
+  let result = ZW_WRAP
+  for (const ch of bin) {
+    result += ch === '0' ? ZW_0 : ZW_1
+  }
+  result += ZW_WRAP
+  return result
+}
+
+const zwToId = (zwStr) => {
+  const inner = zwStr.slice(1, -1)
+  let bin = ''
+  for (const ch of inner) {
+    if (ch === ZW_0) bin += '0'
+    else if (ch === ZW_1) bin += '1'
+  }
+  if (bin.length !== 32) return null
+  return parseInt(bin, 2)
+}
+
+const MENTION_REGEX = /@([^\s@]+)(\u200D[\u200B\u200C]{32}\u200D)/g
+
+const commentAttachments = ref([])
+const submittingComment = ref(false)
+const uploadingCommentAttachment = ref(false)
+const replyToCommentId = ref(null)
+
+const mentionPickerVisible = ref(false)
+const mentionKeyword = ref('')
+const mentionUserList = ref([])
+const loadingMentionUsers = ref(false)
+const mentionUsersMap = ref({})
+
+const canSubmitComment = computed(() => {
+  return (commentContent.value.trim() || commentAttachments.value.length) && !submittingComment.value
+})
+
+const getFileExt = (fileName) => {
+  if (!fileName) return '文件'
+  const ext = fileName.split('.').pop().toUpperCase()
+  return ext || '文件'
+}
+
+const getFileIconClass = (fileName) => {
+  const ext = (fileName || '').split('.').pop().toLowerCase()
+  if (['pdf'].includes(ext)) return 'ext-pdf'
+  if (['doc', 'docx'].includes(ext)) return 'ext-word'
+  if (['xls', 'xlsx'].includes(ext)) return 'ext-excel'
+  if (['ppt', 'pptx'].includes(ext)) return 'ext-ppt'
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'ext-zip'
+  return 'ext-other'
+}
+
+const fetchComments = async (page = 1) => {
+  if (!taskId.value) return
+  loadingComments.value = true
+  try {
+    const res = await api.taskComments(taskId.value, { page, page_size: 20 })
+    const items = (res.items || []).map(item => ({
+      ...item,
+      attachments: (item.attachments || []).map(att => ({
+        ...att,
+        url: resolveAssetUrl(att.url)
+      }))
+    }))
+    if (page === 1) {
+      comments.value = items
+    } else {
+      comments.value = [...comments.value, ...items]
+    }
+    commentTotal.value = res.total || 0
+    commentPage.value = page
+    hasMoreComments.value = items.length >= 20 && comments.value.length < commentTotal.value
+  } catch (error) {
+    console.error(error)
+  } finally {
+    loadingComments.value = false
+  }
+}
+
+const loadMoreComments = () => {
+  fetchComments(commentPage.value + 1)
+}
+
+const renderCommentContent = (content) => {
+  if (!content) return ''
+  let html = content
+    .replace(/@\[(\d+)\]\(([^)]+)\)/g, '<span style="color:#1677ff;cursor:pointer;">@$2</span>')
+    .replace(/@\[(\d+)\]/g, '')
+    .replace(/\n/g, '<br/>')
+  return html
+}
+
+const canDeleteComment = (comment) => {
+  if (!profile.value?.id) return false
+  const userId = Number(profile.value.id)
+  return Number(comment.user_id) === userId || isAdminDept.value
+}
+
+const replyToComment = (comment) => {
+  replyToCommentId.value = comment.id
+  uni.showToast({ title: '回复功能开发中', icon: 'none' })
+}
+
+const deleteComment = async (comment) => {
+  uni.showModal({
+    title: '删除评论',
+    content: '确定要删除这条评论吗？',
+    success: async (res) => {
+      if (!res.confirm) return
+      try {
+        await api.deleteTaskComment(comment.id)
+        comments.value = comments.value.filter(c => c.id !== comment.id)
+        commentTotal.value = Math.max(0, commentTotal.value - 1)
+        uni.showToast({ title: '已删除', icon: 'success' })
+      } catch (error) {
+        console.error(error)
+      }
+    }
+  })
+}
+
+const uploadCommentFiles = async (tempFiles, defaultType = 'image') => {
+  if (!tempFiles?.length) return
+  uploadingCommentAttachment.value = true
+  try {
+    for (const file of tempFiles) {
+      const filePath = file.tempFilePath || file.path
+      const result = await uploadFile(filePath)
+      commentAttachments.value.push({
+        media_id: result.media_id,
+        url: resolveAssetUrl(result.url),
+        file_name: result.file_name || file.name || '附件',
+        file_type: result.file_type || (file.fileType === 'video' ? 'video' : defaultType),
+        file_size: result.file_size || file.size || 0,
+        isNew: true
+      })
+    }
+  } catch (error) {
+    console.error(error)
+    uni.showToast({ title: '上传失败', icon: 'none' })
+  } finally {
+    uploadingCommentAttachment.value = false
+  }
+}
+
+const chooseCommentImage = () => {
+  if (uploadingCommentAttachment.value) return
+  uni.chooseMedia({
+    count: 9,
+    mediaType: ['image', 'video'],
+    success: (res) => {
+      uploadCommentFiles(res.tempFiles, 'image')
+    }
+  })
+}
+
+const chooseCommentFile = () => {
+  if (uploadingCommentAttachment.value) return
+  uni.chooseFile({
+    count: 5,
+    extension: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar', '.7z', '.txt', '.csv', '.jpg', '.jpeg', '.png', '.gif', '.mp4', '.mov'],
+    success: (res) => {
+      if (!res.tempFilePaths?.length) return
+      const files = res.tempFiles.map((f, i) => ({
+        tempFilePath: res.tempFilePaths[i],
+        name: f.name || f.path?.split('/').pop() || '文件',
+        size: f.size || 0
+      }))
+      uploadCommentFiles(files, 'document')
+    },
+    fail: () => {
+      uni.chooseMessageFile({
+        count: 5,
+        type: 'file',
+        success: (res) => {
+          if (!res.tempFiles?.length) return
+          const files = res.tempFiles.map(f => ({
+            tempFilePath: f.path,
+            name: f.name || '文件',
+            size: f.size || 0
+          }))
+          uploadCommentFiles(files, 'document')
+        },
+        fail: () => {
+          uni.showToast({ title: '当前环境不支持选择文件', icon: 'none' })
+        }
+      })
+    }
+  })
+}
+
+const removeCommentAttachment = (index) => {
+  commentAttachments.value.splice(index, 1)
+}
+
+const openMentionPicker = () => {
+  mentionPickerVisible.value = true
+  mentionKeyword.value = ''
+  searchMentionUsers()
+}
+
+const searchMentionUsers = async () => {
+  loadingMentionUsers.value = true
+  try {
+    const params = {}
+    if (mentionKeyword.value) {
+      params.keyword = mentionKeyword.value
+    }
+    const res = await api.lookupStaff(params)
+    mentionUserList.value = res.items || []
+    res.items?.forEach?.((u) => {
+      mentionUsersMap.value[u.id] = u
+    })
+  } catch (error) {
+    console.error(error)
+  } finally {
+    loadingMentionUsers.value = false
+  }
+}
+
+const selectMentionUser = (user) => {
+  const zwId = idToZw(user.id)
+  mentionUsersMap.value[user.id] = user
+  commentContent.value += `@${user.name}${zwId} `
+  mentionPickerVisible.value = false
+}
+
+const buildSubmitContent = () => {
+  let content = commentContent.value
+  let result = ''
+  let lastIndex = 0
+  let match
+  const regex = new RegExp(MENTION_REGEX.source, 'g')
+  while ((match = regex.exec(content)) !== null) {
+    result += content.slice(lastIndex, match.index)
+    const displayName = match[1]
+    const zwId = match[2]
+    const userId = zwToId(zwId)
+    if (userId) {
+      result += `@[${userId}](${displayName})`
+    } else {
+      result += `@${displayName}`
+    }
+    lastIndex = match.index + match[0].length
+  }
+  result += content.slice(lastIndex)
+  return result
+}
+
+const canPreviewAsDocument = (fileName) => {
+  const ext = (fileName || '').split('.').pop()?.toLowerCase() || ''
+  const previewableExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv']
+  return previewableExts.includes(ext)
+}
+
+const isArchiveFile = (fileName) => {
+  const ext = (fileName || '').split('.').pop()?.toLowerCase() || ''
+  const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2']
+  return archiveExts.includes(ext)
+}
+
+const videoPreviewUrl = ref('')
+const previewAttachment = (att) => {
+  const url = att.url
+  const fileName = att.file_name || ''
+  if (!url) {
+    uni.showToast({ title: '无法打开文件', icon: 'none' })
+    return
+  }
+  if (att.file_type === 'image') {
+    const imageUrls = (comments.value
+      .flatMap(c => c.attachments || [])
+      .filter(a => a.file_type === 'image') || [])
+      .map(a => a.url)
+    uni.previewImage({
+      urls: imageUrls.length ? imageUrls : [url],
+      current: url
+    })
+  } else if (att.file_type === 'video') {
+    videoPreviewUrl.value = url
+  } else {
+    uni.downloadFile({
+      url,
+      success: (downloadRes) => {
+        if (downloadRes.statusCode === 200) {
+          uni.openDocument({
+            filePath: downloadRes.tempFilePath,
+            showMenu: true,
+            fail: () => {
+              uni.showActionSheet({
+                itemList: ['用其他应用打开', '复制下载链接'],
+                success: (res) => {
+                  if (res.tapIndex === 0) {
+                    uni.share?.({
+                      provider: 'weixin',
+                      scene: 'WXSceneSession',
+                      type: 0,
+                      filePath: downloadRes.tempFilePath,
+                      fail: () => {
+                        uni.saveFile({
+                          tempFilePath: downloadRes.tempFilePath,
+                          success: (saveRes) => {
+                            uni.showToast({ title: `已保存，路径: ${saveRes.savedFilePath}`, icon: 'none', duration: 3000 })
+                          },
+                          fail: () => {
+                            uni.showToast({ title: '保存失败', icon: 'none' })
+                          }
+                        })
+                      }
+                    }) || uni.saveFile({
+                      tempFilePath: downloadRes.tempFilePath,
+                      success: () => {
+                        uni.showToast({ title: '已保存到应用目录', icon: 'success' })
+                      },
+                      fail: () => {
+                        uni.showToast({ title: '保存失败', icon: 'none' })
+                      }
+                    })
+                  } else if (res.tapIndex === 1) {
+                    uni.setClipboardData({
+                      data: url,
+                      success: () => {
+                        uni.showToast({ title: '链接已复制', icon: 'success' })
+                      }
+                    })
+                  }
+                }
+              })
+            }
+          })
+        } else {
+          uni.showToast({ title: '下载失败', icon: 'none' })
+        }
+      },
+      fail: () => {
+        uni.showActionSheet({
+          itemList: ['复制下载链接'],
+          success: (res) => {
+            if (res.tapIndex === 0) {
+              uni.setClipboardData({
+                data: url,
+                success: () => {
+                  uni.showToast({ title: '链接已复制', icon: 'success' })
+                }
+              })
+            }
+          }
+        })
+      }
+    })
+  }
+}
+
+const closeVideoPreview = () => {
+  videoPreviewUrl.value = ''
+}
+
+const submitComment = async () => {
+  if (!canSubmitComment.value || !taskId.value) return
+  submittingComment.value = true
+  try {
+    const payload = {
+      content: buildSubmitContent(),
+      attachments: commentAttachments.value.map(a => a.media_id),
+      reply_to: replyToCommentId.value
+    }
+    const res = await api.createTaskComment(taskId.value, payload)
+    if (res.comment) {
+      res.comment.attachments = (res.comment.attachments || []).map(att => ({
+        ...att,
+        url: resolveAssetUrl(att.url)
+      }))
+      comments.value = [res.comment, ...comments.value]
+      commentTotal.value += 1
+    }
+    commentContent.value = ''
+    commentAttachments.value = []
+    mentionUsersMap.value = {}
+    replyToCommentId.value = null
+    uni.showToast({ title: '评论成功', icon: 'success' })
+  } catch (error) {
+    console.error(error)
+  } finally {
+    submittingComment.value = false
+  }
+}
+
+watch(taskId, (val) => {
+  if (val) {
+    fetchComments(1)
+  }
+})
+
+onLoad(async (query) => {
+  if (!query?.id) return
+  taskId.value = Number(query.id)
+  await Promise.all([fetchTaskDetail(taskId.value), fetchSuppliers(), fetchStaff()])
+  fetchComments(1)
+})
 </script>
 
 <style scoped lang="scss">
 .page {
   padding: 32rpx;
+  padding-bottom: 200rpx;
   background: #f6f7fb;
 }
 .card {
@@ -1747,5 +2271,249 @@ const toggleFollow = async () => {
 }
 .qty-inline input {
   flex: 1;
+}
+
+.comments {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+.comment-item {
+  background: #f7f8fa;
+  border-radius: 16rpx;
+  padding: 20rpx;
+}
+.comment-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+.comment-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1677ff, #69b1ff);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.comment-meta {
+  flex: 1;
+}
+.comment-user {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #333;
+}
+.comment-time {
+  font-size: 22rpx;
+  color: #999;
+  margin-top: 4rpx;
+}
+.comment-actions {
+  display: flex;
+  gap: 16rpx;
+}
+.reply-btn,
+.delete-btn {
+  font-size: 22rpx;
+  color: #1677ff;
+}
+.delete-btn {
+  color: #ff4d4f;
+}
+.comment-content {
+  font-size: 26rpx;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 12rpx;
+}
+.comment-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+.comment-attachment {
+  width: 160rpx;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background: #f0f2f5;
+  position: relative;
+}
+.comment-attachment .att-thumb {
+  width: 100%;
+  height: 120rpx;
+}
+.comment-attachment .file-icon {
+  width: 100%;
+  height: 120rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.comment-attachment .video-icon {
+  background: #1a1a2e;
+}
+.comment-attachment .doc-icon {
+  background: #e8f4ff;
+}
+.comment-attachment .file-ext {
+  font-size: 22rpx;
+  color: #1677ff;
+  font-weight: 600;
+}
+.comment-attachment .video-icon .file-ext {
+  color: #fff;
+}
+.comment-attachment .att-name {
+  font-size: 20rpx;
+  color: #666;
+  text-align: center;
+  padding: 8rpx 4rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.load-more {
+  text-align: center;
+  margin-top: 16rpx;
+}
+.comment-input-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff;
+  border-top: 1rpx solid #f0f0f0;
+  padding: 16rpx 24rpx;
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  z-index: 100;
+}
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+.input-actions {
+  display: flex;
+  gap: 8rpx;
+}
+.icon-btn {
+  width: 72rpx;
+  height: 72rpx;
+  padding: 0;
+  border-radius: 50%;
+  background: #f5f6fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-icon {
+  font-size: 32rpx;
+}
+.comment-input {
+  flex: 1;
+  background: #f5f6fa;
+  border-radius: 36rpx;
+  padding: 16rpx 24rpx;
+  font-size: 26rpx;
+  min-height: 72rpx;
+  max-height: 200rpx;
+}
+.send-btn {
+  background: #1677ff;
+  color: #fff;
+  border-radius: 36rpx;
+  padding: 0 32rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  font-size: 26rpx;
+}
+.send-btn[disabled] {
+  background: #d6e4ff;
+}
+.pending-comment-attachments {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+  margin-top: 12rpx;
+  padding-left: 92rpx;
+}
+.pending-att-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.pending-att-item .att-thumb {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 12rpx;
+}
+.pending-file-chip {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  background: #e8f4ff;
+  border-radius: 12rpx;
+  padding: 10rpx 16rpx;
+  max-width: 320rpx;
+}
+.pending-file-ext {
+  font-size: 20rpx;
+  color: #1677ff;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.pending-file-name {
+  font-size: 22rpx;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pending-att-item .remove {
+  position: absolute;
+  right: -8rpx;
+  top: -8rpx;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 50%;
+  font-size: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.video-preview-box {
+  width: 92%;
+  background: #000;
+  border-radius: 24rpx;
+  overflow: hidden;
+  position: relative;
+}
+.video-preview-player {
+  width: 100%;
+}
+.video-close {
+  position: absolute;
+  right: 20rpx;
+  top: 20rpx;
+  width: 56rpx;
+  height: 56rpx;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
 }
 </style>

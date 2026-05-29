@@ -740,4 +740,98 @@ class Task extends ApiController
         }
         return $this->isVisibleToUser($taskRow, (int)$user['id']);
     }
+
+    public function comments($taskId)
+    {
+        $taskId = (int)$taskId;
+        $user = $this->user();
+        $taskRow = Db::table('tasks')->alias('t')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->field([
+                't.id',
+                't.created_by',
+                't.assigned_to',
+                'o.initiator_id as order_initiator_id',
+                'o.sales_owner_id as order_sales_owner_id',
+            ])
+            ->where('t.id', $taskId)
+            ->find();
+        if (!$taskRow) {
+            $this->errorResponse('任务不存在', 404);
+        }
+        if (!$this->canViewTask($taskRow, $user)) {
+            $this->errorResponse('暂无权限查看该任务评论', 403);
+        }
+
+        $page = (int)Request::get('page', 1);
+        $pageSize = (int)Request::get('page_size', 20);
+        $result = $this->taskService->getTaskComments($taskId, $page, $pageSize);
+
+        return $this->success($result);
+    }
+
+    public function createComment($taskId)
+    {
+        $taskId = (int)$taskId;
+        $user = $this->user();
+        $taskRow = Db::table('tasks')->alias('t')
+            ->leftJoin('orders o', 'o.id = t.order_id')
+            ->field([
+                't.id',
+                't.created_by',
+                't.assigned_to',
+                'o.initiator_id as order_initiator_id',
+                'o.sales_owner_id as order_sales_owner_id',
+            ])
+            ->where('t.id', $taskId)
+            ->find();
+        if (!$taskRow) {
+            $this->errorResponse('任务不存在', 404);
+        }
+        if (!$this->canViewTask($taskRow, $user)) {
+            $this->errorResponse('暂无权限评论该任务', 403);
+        }
+
+        $data = $this->requestData();
+        $content = $data['content'] ?? '';
+        if (empty($content) && empty($data['attachments'])) {
+            $this->errorResponse('评论内容或附件不能为空');
+        }
+
+        $attachments = $data['attachments'] ?? [];
+        if (!is_array($attachments)) {
+            $attachments = [];
+        }
+        $replyTo = isset($data['reply_to']) ? (int)$data['reply_to'] : null;
+
+        try {
+            $comment = $this->taskService->createComment(
+                $taskId,
+                (int)$user['id'],
+                $content,
+                $attachments,
+                $replyTo
+            );
+        } catch (\Exception $e) {
+            $this->errorResponse('评论创建失败：' . $e->getMessage());
+        }
+
+        return $this->success(['comment' => $comment], '评论发布成功', 201);
+    }
+
+    public function deleteComment($id)
+    {
+        $commentId = (int)$id;
+        $user = $this->user();
+        try {
+            $result = $this->taskService->deleteComment($commentId, (int)$user['id']);
+            if (!$result) {
+                $this->errorResponse('评论不存在', 404);
+            }
+        } catch (\Exception $e) {
+            $this->errorResponse($e->getMessage(), 403);
+        }
+
+        return $this->success([], '评论已删除');
+    }
 }
