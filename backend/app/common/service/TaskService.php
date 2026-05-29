@@ -1131,4 +1131,102 @@ class TaskService
         Db::table('task_comments')->where('id', $commentId)->delete();
         return true;
     }
+
+    public function batchAssign(array $taskIds, int $assignedTo, int $operatorId, ?string $startAt = null): array
+    {
+        if (empty($taskIds)) {
+            return ['success' => false, 'message' => '请选择要指派的任务'];
+        }
+
+        if ($assignedTo <= 0) {
+            return ['success' => false, 'message' => '请选择负责人'];
+        }
+
+        $assignee = Db::table('users')->where('id', $assignedTo)->find();
+        if (!$assignee) {
+            return ['success' => false, 'message' => '负责人不存在'];
+        }
+
+        $successCount = 0;
+        $failedCount = 0;
+        $failedTasks = [];
+
+        Db::startTrans();
+        try {
+            foreach ($taskIds as $taskId) {
+                $taskId = (int)$taskId;
+                $task = Db::table('tasks')->where('id', $taskId)->find();
+                if (!$task) {
+                    $failedCount++;
+                    $failedTasks[] = ['id' => $taskId, 'reason' => '任务不存在'];
+                    continue;
+                }
+
+                $canAssign = (int)$task['created_by'] === $operatorId || \user_belongs_to_admin_dept(Db::table('users')->where('id', $operatorId)->find());
+                if (!$canAssign) {
+                    $failedCount++;
+                    $failedTasks[] = ['id' => $taskId, 'reason' => '无权限指派该任务'];
+                    continue;
+                }
+
+                $changes = [
+                    'assigned_to' => $assignedTo,
+                ];
+
+                if (!empty($startAt)) {
+                    $changes['start_at'] = $startAt;
+                }
+
+                if (($task['status'] ?? '') === 'pending') {
+                    $changes['status'] = 'in_progress';
+                }
+
+                $this->updateTask($taskId, $changes, $operatorId, ['assigned_to_name' => $assignee['name']]);
+                $successCount++;
+            }
+
+            Db::commit();
+        } catch (\Exception $e) {
+            Db::rollback();
+            return ['success' => false, 'message' => '批量指派失败：' . $e->getMessage()];
+        }
+
+        return [
+            'success' => true,
+            'message' => "批量指派完成，成功 {$successCount} 个，失败 {$failedCount} 个",
+            'success_count' => $successCount,
+            'failed_count' => $failedCount,
+            'failed_tasks' => $failedTasks,
+        ];
+    }
+
+    public function batchUrge(array $taskIds, int $operatorId): array
+    {
+        if (empty($taskIds)) {
+            return ['success' => false, 'message' => '请选择要催办的任务'];
+        }
+
+        $successCount = 0;
+        $failedCount = 0;
+        $failedTasks = [];
+
+        foreach ($taskIds as $taskId) {
+            $taskId = (int)$taskId;
+            $result = $this->urgeTask($taskId, $operatorId);
+            if ($result['success']) {
+                $successCount++;
+            } else {
+                $failedCount++;
+                $failedTasks[] = ['id' => $taskId, 'reason' => $result['message']];
+            }
+        }
+
+        return [
+            'success' => true,
+            'message' => "批量催办完成，成功 {$successCount} 个，失败 {$failedCount} 个",
+            'success_count' => $successCount,
+            'failed_count' => $failedCount,
+            'failed_tasks' => $failedTasks,
+        ];
+    }
 }

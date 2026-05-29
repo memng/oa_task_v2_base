@@ -834,4 +834,47 @@ class Task extends ApiController
 
         return $this->success([], '评论已删除');
     }
+
+    public function batchAssign()
+    {
+        $data = $this->requestData();
+        $taskIds = $data['task_ids'] ?? [];
+        $assignedTo = isset($data['assigned_to']) ? (int)$data['assigned_to'] : 0;
+        $startAt = $data['start_at'] ?? null;
+
+        if (!is_array($taskIds) || empty($taskIds)) {
+            $this->errorResponse('请选择要指派的任务');
+        }
+        if ($assignedTo <= 0) {
+            $this->errorResponse('请选择负责人');
+        }
+
+        $user = $this->user();
+        $result = $this->taskService->batchAssign($taskIds, $assignedTo, (int)$user['id'], $startAt);
+
+        if (!$result['success']) {
+            $this->errorResponse($result['message']);
+        }
+
+        return $this->success($result, $result['message']);
+    }
+
+    public function batchUrge()
+    {
+        $data = $this->requestData();
+        $taskIds = $data['task_ids'] ?? [];
+
+        if (!is_array($taskIds) || empty($taskIds)) {
+            $this->errorResponse('请选择要催办的任务');
+        }
+
+        $user = $this->user();
+        $result = $this->taskService->batchUrge($taskIds, (int)$user['id']);
+
+        if (!$result['success']) {
+            $this->errorResponse($result['message']);
+        }
+
+        return $this->success($result, $result['message']);
+    }
 }

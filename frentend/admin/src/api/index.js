@@ -69,6 +69,12 @@ export const api = {
   createTask(data) {
     return client.post('/tasks', data)
   },
+  batchAssignTasks(data) {
+    return client.post('/tasks/batch/assign', data)
+  },
+  batchUrgeTasks(data) {
+    return client.post('/tasks/batch/urge', data)
+  },
   announcements() {
     return client.get('/announcements')
   },

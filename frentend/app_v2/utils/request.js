@@ -265,6 +265,12 @@ export const api = {
   urgeTask(id) {
     return request({ url: `/tasks/${id}/urge`, method: 'POST' })
   },
+  batchAssignTasks(payload) {
+    return request({ url: '/tasks/batch/assign', method: 'POST', data: payload })
+  },
+  batchUrgeTasks(payload) {
+    return request({ url: '/tasks/batch/urge', method: 'POST', data: payload })
+  },
   copyTask(id, options = {}) {
     return request({ url: `/tasks/${id}/copy`, method: 'POST', silentError: options.silentError })
   },

@@ -57,6 +57,8 @@ Route::group('api', function () {
     Route::get('tasks/:id/comments', '\app\api\controller\Task@comments');
     Route::post('tasks/:id/comments', '\app\api\controller\Task@createComment');
     Route::delete('tasks/comments/:id', '\app\api\controller\Task@deleteComment');
+    Route::post('tasks/batch/assign', '\app\api\controller\Task@batchAssign');
+    Route::post('tasks/batch/urge', '\app\api\controller\Task@batchUrge');
     Route::get('tasks/:id', '\app\api\controller\Task@read');
     Route::get('tasks', '\app\api\controller\Task@index');
     Route::post('tasks', '\app\api\controller\Task@save');
