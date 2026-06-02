@@ -57,6 +57,7 @@ import { api } from '../../utils/request'
 const loading = ref(false)
 const assignedTasks = ref([])
 const reviewTasks = ref([])
+const initiatedTasks = ref([])
 
 const profile = computed(() => store.state.profile || {})
 const profileName = computed(() => profile.value.name || '同事')
@@ -94,6 +95,7 @@ const temporaryTasks = computed(() =>
 const pendingReviewTasks = computed(() =>
   (reviewTasks.value || []).filter((task) => task.status === 'waiting_audit' || task.status === 'pending')
 )
+const myInitiatedTasks = computed(() => initiatedTasks.value || [])
 
 const entryList = computed(() => {
   const entries = []
@@ -113,6 +115,12 @@ const entryList = computed(() => {
       desc: '分配给你的临时任务'
     })
   }
+  entries.push({
+    key: 'initiated',
+    title: '我发起的任务',
+    count: myInitiatedTasks.value.length,
+    desc: '查看你创建的全部任务'
+  })
   if (isAdminDept.value && pendingReviewTasks.value.length) {
     entries.push({
       key: 'review',
@@ -127,12 +135,14 @@ const entryList = computed(() => {
 const fetchData = async () => {
   loading.value = true
   try {
-    const [assignedRes, reviewRes] = await Promise.all([
+    const [assignedRes, reviewRes, initiatedRes] = await Promise.all([
       api.taskList({ scope: 'assigned' }),
-      isAdminDept.value ? api.taskList({ scope: 'review', status: 'waiting_audit' }) : Promise.resolve({ items: [] })
+      isAdminDept.value ? api.taskList({ scope: 'review', status: 'waiting_audit' }) : Promise.resolve({ items: [] }),
+      api.taskList({ scope: 'initiated' })
     ])
     assignedTasks.value = assignedRes.items || []
     reviewTasks.value = reviewRes.items || []
+    initiatedTasks.value = initiatedRes.items || []
   } catch (error) {
     console.error(error)
   } finally {

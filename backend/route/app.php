@@ -40,6 +40,7 @@ Route::group('api', function () {
 
     Route::post('tasks/:id/procurement', '\app\api\controller\Task@updateProcurement');
     Route::post('tasks/:id/assign', '\app\api\controller\Task@assign');
+    Route::post('tasks/:id/urge', '\app\api\controller\Task@urge');
     Route::post('tasks/:id/status', '\app\api\controller\Task@updateStatus');
     Route::get('tasks/:id', '\app\api\controller\Task@read');
     Route::get('tasks', '\app\api\controller\Task@index');
